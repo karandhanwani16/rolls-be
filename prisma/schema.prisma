@@ -1,0 +1,281 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "mysql"
+  url       = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  password   String
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+  profile    Profile?
+
+  @@map("users")
+}
+
+model Profile {
+  id         String   @id
+  full_name  String?
+  avatar_url String?
+  role       String?  @default("user")
+  updated_at DateTime @default(now()) @updatedAt
+  user       User     @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model Customer {
+  id                    String              @id @default(uuid()) @map("customer_id")
+  name                  String              @map("customer_name")
+  phone                 String?             @map("customer_phone")
+  description           String?             @map("customer_description")
+  city                  String?             @map("customer_city")
+  type                  String?             @map("customer_type")
+  created_at            DateTime            @default(now())
+  updated_at            DateTime            @default(now()) @updatedAt
+  sales                 Sale[]
+  bill_to_bill_payments BillToBillPayment[]
+  // Relations
+  receive_payments      PaymentIn[]         @relation("ReceivePayments")
+  actual_payments       PaymentIn[]         @relation("ActualPayments")
+  transactions          Transaction[]
+
+  @@map("customers")
+}
+
+model Supplier {
+  id           String        @id @default(uuid()) @map("supplier_id")
+  name         String        @map("supplier_name")
+  phone        String?       @map("supplier_phone")
+  description  String?       @map("supplier_description")
+  city         String?       @map("supplier_city")
+  created_at   DateTime      @default(now())
+  updated_at   DateTime      @default(now()) @updatedAt
+  payments_out PaymentOut[]
+  purchases    Purchase[]
+  transactions Transaction[]
+
+  @@map("suppliers")
+}
+
+model Grade {
+  id         String    @id @default(uuid()) @map("grade_id")
+  name       String    @map("grade_name")
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now()) @updatedAt
+  products   Product[]
+
+  @@map("grades")
+}
+
+model Godown {
+  id         String   @id @default(uuid()) @map("godown_id")
+  name       String   @map("godown_name")
+  sales      Sale[]
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@map("godowns")
+}
+
+model PaymentIn {
+  id              String    @id @default(cuid())
+  payment_date    DateTime? @map("payment_date")
+  receive_id      String?
+  actual_id       String?
+  received_amount Float
+  actual_amount   Float
+  charges         Float?
+  type            String
+  description     String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  // Relations
+  receive_customer Customer? @relation("ReceivePayments", fields: [receive_id], references: [id])
+  actual_customer  Customer? @relation("ActualPayments", fields: [actual_id], references: [id])
+
+  @@index([receive_id])
+  @@index([actual_id])
+}
+
+model PaymentOut {
+  id           String    @id @default(uuid()) @map("payment_out_id")
+  payment_date DateTime? @map("payment_out_date")
+  supplier     Supplier  @relation(fields: [supplier_id], references: [id])
+  supplier_id  String
+  amount       Float     @map("payment_out_amount")
+  description  String?   @map("payment_out_description")
+  type         String    @map("payment_out_type")
+  cheque_date  DateTime? @map("payment_out_cheque_date")
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @default(now()) @updatedAt
+
+  @@map("payments_out")
+}
+
+model Purchase {
+  id            String         @id @default(uuid()) @map("purchase_id")
+  supplier      Supplier       @relation(fields: [supplier_id], references: [id])
+  supplier_id   String
+  supplier_name String         @map("supplier_name")
+  date          DateTime       @map("purchase_date")
+  total         Float          @map("purchase_total")
+  purchase_no   String         @map("purchase_no")
+  description   String?        @map("purchase_description")
+  godown        String?        @map("purchase_godown")
+  transport     String?        @map("purchase_transport")
+  received_by   String?        @map("purchase_received_by")
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @default(now()) @updatedAt
+  items         PurchaseItem[]
+
+  @@map("purchases")
+}
+
+enum PurchaseItemStatus {
+  UNSOLD
+  SOLD
+}
+
+model PurchaseItem {
+  id           String             @id @default(uuid()) @map("purchase_items_id")
+  purchase     Purchase           @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  purchase_id  String
+  product_id   String?            @map("product_id")
+  product_name String             @map("product_name")
+  grade_id     String?            @map("product_grade_id")
+  grade_name   String?            @map("product_grade_name")
+  roll_no      String?            @map("purchase_items_roll_no")
+  meters       Float              @map("purchase_items_meters")
+  price        Float              @map("purchase_items_price")
+  total        Float              @map("purchase_items_total")
+  status       PurchaseItemStatus @map("purchase_items_status")
+  created_at   DateTime           @default(now())
+  updated_at   DateTime           @default(now()) @updatedAt
+
+  @@map("purchase_items")
+}
+
+model Sale {
+  id            String                    @id @default(uuid()) @map("sales_id")
+  date          DateTime                  @map("sales_date")
+  sales_no      String                    @map("sales_no")
+  customer      Customer                  @relation(fields: [customer_id], references: [id])
+  godown        Godown?                   @relation(fields: [godown_id], references: [id])
+  godown_id     String?                   @map("sales_godown_id")
+  customer_id   String                    @map("customer_id")
+  customer_name String                    @map("customer_name")
+  total         Float                     @map("sales_total")
+  description   String?                   @map("sales_description")
+  hamaal        String?                   @map("sales_hamaal")
+  challan_no    String?                   @map("sales_challan_no")
+  maker         String?                   @map("sales_maker")
+  sales_by      String?                   @map("sales_by")
+  created_at    DateTime                  @default(now())
+  updated_at    DateTime                  @default(now()) @updatedAt
+  items         SaleItem[]
+  bill_payments BillToBillPaymentDetail[]
+
+  @@map("sales")
+}
+
+model SaleItem {
+  id               String   @id @default(uuid()) @map("sales_items_id")
+  sale             Sale     @relation(fields: [sale_id], references: [id], onDelete: Cascade)
+  sale_id          String   @map("sales_id")
+  product_id       String?  @map("product_id")
+  product_name     String   @map("product_name")
+  grade_id         String?  @map("grade_id")
+  purchase_item_id String?  @map("purchase_item_id")
+  roll_no          String?  @map("sales_items_roll_no")
+  meters           Float    @map("sales_items_meters")
+  price            Float    @map("sales_items_price")
+  total            Float    @map("sales_items_total")
+  created_at       DateTime @default(now())
+  updated_at       DateTime @default(now()) @updatedAt
+
+  @@map("sales_items")
+}
+
+model BillToBillPayment {
+  id                     String                    @id @default(uuid()) @map("bill_to_bill_payment_id")
+  customer               Customer                  @relation(fields: [customer_id], references: [id])
+  customer_id            String                    @map("customer_id")
+  bill_clear_date        DateTime                  @map("bill_clear_date")
+  bill_overflow_amount   Float                     @default(0) @map("bill_overflow_amount")
+  bill_latest_clear_date DateTime                  @map("bill_latest_clear_date")
+  created_at             DateTime                  @default(now())
+  updated_at             DateTime                  @default(now()) @updatedAt
+  details                BillToBillPaymentDetail[]
+  settlements            BillSettlement[]
+
+  @@map("bill_to_bill_payments")
+}
+
+model BillToBillPaymentDetail {
+  id              String            @id @default(uuid()) @map("bill_detail_id")
+  bill_payment    BillToBillPayment @relation(fields: [bill_payment_id], references: [id], onDelete: Cascade)
+  bill_payment_id String            @map("bill_payment_id")
+  sale            Sale              @relation(fields: [sale_id], references: [id])
+  sale_id         String            @map("sale_id")
+  cleared_amount  Float             @map("cleared_amount")
+  status          String            @map("payment_status") // "FULL", "PARTIAL"
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @default(now()) @updatedAt
+
+  @@map("bill_to_bill_payment_details")
+}
+
+model BillSettlement {
+  id              String            @id @default(uuid()) @map("settlement_id")
+  bill_payment    BillToBillPayment @relation(fields: [bill_payment_id], references: [id], onDelete: Cascade)
+  bill_payment_id String            @map("bill_payment_id")
+  settlement_date DateTime          @map("settlement_date")
+  total_amount    Float             @map("total_amount")
+  overflow_amount Float             @default(0) @map("overflow_amount")
+  description     String?           @map("settlement_description")
+  created_at      DateTime          @default(now())
+  updated_at      DateTime          @default(now()) @updatedAt
+
+  @@map("bill_settlements")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @map("product_id")
+  name        String   @map("product_name")
+  description String?  @map("product_description")
+  grade_id    String?  @map("product_grade_id")
+  grade       Grade?   @relation(fields: [grade_id], references: [id])
+  grade_name  String?  @map("product_grade_name")
+  price       Float    @map("product_price")
+  color       String?  @map("product_color")
+  width       String?  @map("product_width")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @default(now()) @updatedAt
+
+  @@map("products")
+}
+
+model Transaction {
+  id          String    @id @default(uuid()) @map("transaction_id")
+  type        String    @map("transaction_type")
+  description String?   @map("transaction_description")
+  customer_id String?   @map("transaction_customer_id")
+  supplier_id String?   @map("transaction_supplier_id")
+  amount      Float     @map("transaction_amount")
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @default(now()) @updatedAt
+  customer    Customer? @relation(fields: [customer_id], references: [id])
+  supplier    Supplier? @relation(fields: [supplier_id], references: [id])
+
+  @@map("transactions")
+}
