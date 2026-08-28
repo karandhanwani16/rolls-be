@@ -105,6 +105,7 @@ model PaymentIn {
 
   @@index([receive_id])
   @@index([actual_id])
+  @@map("paymentin")
 }
 
 model PaymentOut {
