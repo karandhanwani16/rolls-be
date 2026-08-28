@@ -18,9 +18,10 @@ const getUserFromToken = async(req, res, next) => {
         // Verify the JWT token using our secret
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-        // Get user from database
-        const user = await prisma.profile.findUnique({
-            where: { id: decoded.id }
+        // Auth tokens are issued for users. Profile is optional metadata.
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            include: { profile: true }
         });
         if (!user) {
             return res.status(401).json({
@@ -31,8 +32,8 @@ const getUserFromToken = async(req, res, next) => {
 
         req.user = {
             id: user.id,
-            email: decoded.email,
-            role: user.role
+            email: user.email,
+            role: user.profile?.role || 'user'
         };
 
         next();

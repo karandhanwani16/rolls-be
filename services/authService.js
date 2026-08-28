@@ -21,10 +21,20 @@ class AuthService {
                 throw new Error('Invalid email or password');
             }
 
-            // Get user profile
-            const profile = await prisma.profile.findUnique({
+            // Get user profile, or create one if this user was inserted without it
+            let profile = await prisma.profile.findUnique({
                 where: { id: user.id }
             });
+
+            if (!profile) {
+                profile = await prisma.profile.create({
+                    data: {
+                        id: user.id,
+                        full_name: email.split('@')[0],
+                        role: 'user'
+                    }
+                });
+            }
 
             // Generate JWT token
             const token = jwt.sign({
