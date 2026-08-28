@@ -28,35 +28,23 @@ if (!process.env.JWT_SECRET) {
     process.exit(1);
 }
 
-// Determine allowed origins based on environment
-const getAllowedOrigins = () => {
-    const origins = [
-        'http://mohittraders.local',
-        'https://hoppscotch.io/',
-        'http://localhost:8080'
-    ];
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:8080')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
-    // Add more origins if needed
-    return origins;
-};
-
-// CORS middleware with dynamic origin checking
-// app.use(cors({
-//     origin: function(origin, callback) {
-//         // Allow requests with no origin (like mobile apps, curl requests)
-//         if (!origin) return callback(null, true);
-
-//         const allowedOrigins = getAllowedOrigins();
-//         if (allowedOrigins.indexOf(origin) !== -1) {
-//             callback(null, true);
-//         } else {
-//             callback(new Error('Not allowed by CORS'));
-//         }
-//     },
-//     credentials: true,
-//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//     allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'X-Client-Info']
-// }));
+app.use(cors({
+    origin(origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization', 'X-Client-Info']
+}));
 
 app.use(express.json());
 
@@ -64,25 +52,6 @@ app.use(express.json());
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();
-});
-
-// Add preflight headers to all routes
-app.use((req, res, next) => {
-    // Dynamic origin
-    const origin = req.headers.origin;
-    if (origin && getAllowedOrigins().includes(origin)) {
-        res.header('Access-Control-Allow-Origin', origin);
-    }
-
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Client-Info');
-    next();
-});
-
-// Handle OPTIONS requests explicitly
-app.options('*', (req, res) => {
-    res.status(200).end();
 });
 
 // Routes
