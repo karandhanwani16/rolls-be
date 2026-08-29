@@ -39,6 +39,8 @@ model Customer {
   description           String?             @map("customer_description")
   city                  String?             @map("customer_city")
   type                  String?             @map("customer_type")
+  opening_balance       Float               @default(0) @map("customer_opening_balance")
+  opening_balance_date  DateTime?           @map("customer_opening_balance_date")
   created_at            DateTime            @default(now())
   updated_at            DateTime            @default(now()) @updatedAt
   sales                 Sale[]
@@ -53,13 +55,15 @@ model Customer {
 }
 
 model Supplier {
-  id           String        @id @default(uuid()) @map("supplier_id")
-  name         String        @map("supplier_name")
-  phone        String?       @map("supplier_phone")
-  description  String?       @map("supplier_description")
-  city         String?       @map("supplier_city")
-  created_at   DateTime      @default(now())
-  updated_at   DateTime      @default(now()) @updatedAt
+  id                   String        @id @default(uuid()) @map("supplier_id")
+  name                 String        @map("supplier_name")
+  phone                String?       @map("supplier_phone")
+  description          String?       @map("supplier_description")
+  city                 String?       @map("supplier_city")
+  opening_balance      Float         @default(0) @map("supplier_opening_balance")
+  opening_balance_date DateTime?     @map("supplier_opening_balance_date")
+  created_at           DateTime      @default(now())
+  updated_at           DateTime      @default(now()) @updatedAt
   payments_out     PaymentOut[]
   purchases        Purchase[]
   purchase_returns PurchaseReturn[]

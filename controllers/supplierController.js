@@ -20,12 +20,30 @@ class SupplierController {
 
     async createSupplier(req, res) {
         try {
-            const { supplier_name, supplier_city, supplier_description, supplier_phone } = req.body;
+            const {
+                supplier_name,
+                supplier_city,
+                supplier_description,
+                supplier_phone,
+                opening_balance,
+                opening_balance_date,
+            } = req.body;
+
+            if (opening_balance && Number(opening_balance) !== 0 && !opening_balance_date) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Opening balance date is required when opening balance is set',
+                    data: null,
+                });
+            }
+
             const supplier = await supplierService.createSupplier({
                 name: supplier_name,
                 city: supplier_city,
                 description: supplier_description,
-                phone: supplier_phone
+                phone: supplier_phone,
+                opening_balance: opening_balance ? Number(opening_balance) : 0,
+                opening_balance_date: opening_balance_date ? new Date(opening_balance_date + 'T00:00:00.000Z') : null,
             });
             res.status(201).json({
                 status: 'success',
@@ -43,12 +61,32 @@ class SupplierController {
 
     async updateSupplier(req, res) {
         try {
-            const { supplier_name, supplier_city, supplier_description, supplier_phone } = req.body;
+            const {
+                supplier_name,
+                supplier_city,
+                supplier_description,
+                supplier_phone,
+                opening_balance,
+                opening_balance_date,
+            } = req.body;
+
+            if (opening_balance !== undefined && Number(opening_balance) !== 0 && !opening_balance_date) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Opening balance date is required when opening balance is set',
+                    data: null,
+                });
+            }
+
             const supplier = await supplierService.updateSupplier(req.params.id, {
                 name: supplier_name,
                 city: supplier_city,
                 description: supplier_description,
-                phone: supplier_phone
+                phone: supplier_phone,
+                opening_balance: opening_balance !== undefined ? Number(opening_balance) : undefined,
+                opening_balance_date: opening_balance_date !== undefined
+                    ? (opening_balance_date ? new Date(opening_balance_date + 'T00:00:00.000Z') : null)
+                    : undefined,
             });
             res.json({
                 status: 'success',
@@ -84,11 +122,12 @@ class SupplierController {
     async getPurchasesAndPayments(req, res) {
         try {
             const { supplierIds, startDate, endDate } = req.query;
-            const purchasesAndPayments = await supplierService.getPurchasesAndPaymentsService(supplierIds, startDate, endDate);
+            const result = await supplierService.getPurchasesAndPaymentsService(supplierIds, startDate, endDate);
             res.json({
                 status: 'success',
                 message: 'Purchases and payments retrieved successfully',
-                data: purchasesAndPayments
+                data: result.transactions,
+                summary: result.summary,
             });
         } catch (error) {
             res.status(400).json({
