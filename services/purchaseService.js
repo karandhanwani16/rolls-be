@@ -3,8 +3,9 @@ const prisma = require('../prisma/client');
 const transactionService = require('./transactions');
 
 class PurchaseService {
-    async getAllPurchases() {
+    async getAllPurchases(supplierId) {
         return await prisma.purchase.findMany({
+            where: supplierId ? { supplier_id: supplierId } : undefined,
             include: {
                 supplier: true,
                 items: true
@@ -36,16 +37,21 @@ class PurchaseService {
 
         return await prisma.$transaction(async(prisma) => {
             // Create the purchase record
+            const transportCharges = parseFloat(purchaseDetails.transport_charges) || 0;
+            const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
+            const total = parseFloat((itemsTotal + transportCharges).toFixed(2));
+
             const purchase = await prisma.purchase.create({
                 data: {
                     supplier_id: purchaseDetails.supplier_id,
                     supplier_name: purchaseDetails.supplier_name || '',
                     date: new Date(purchaseDetails.purchase_date), // Convert string date to Date object
-                    total: purchaseDetails.total_amount,
+                    total,
                     purchase_no: purchaseDetails.purchase_no,
                     description: purchaseDetails.description,
                     godown: purchaseDetails.godown_no,
                     transport: purchaseDetails.transport,
+                    transport_charges: transportCharges,
                     received_by: purchaseDetails.received_by,
                     created_at: new Date(),
                     updated_at: new Date()
@@ -58,8 +64,6 @@ class PurchaseService {
                     purchase_id: purchase.id,
                     product_id: item.product_id,
                     product_name: item.product_name,
-                    grade_id: item.grade_id,
-                    grade_name: item.grade_name,
                     roll_no: item.roll_no,
                     meters: item.meters,
                     price: item.price,
@@ -96,17 +100,22 @@ class PurchaseService {
 
         return await prisma.$transaction(async(prisma) => {
             // Update the purchase record
+            const transportCharges = parseFloat(purchaseDetails.transport_charges) || 0;
+            const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
+            const total = parseFloat((itemsTotal + transportCharges).toFixed(2));
+
             const purchase = await prisma.purchase.update({
                 where: { id },
                 data: {
                     supplier_id: purchaseDetails.supplier_id,
                     supplier_name: purchaseDetails.supplier_name,
                     date: new Date(purchaseDetails.purchase_date),
-                    total: purchaseDetails.total_amount,
+                    total,
                     purchase_no: purchaseDetails.purchase_no,
                     description: purchaseDetails.description,
                     godown: purchaseDetails.godown,
                     transport: purchaseDetails.transport,
+                    transport_charges: transportCharges,
                     received_by: purchaseDetails.received_by,
                     updated_at: new Date()
                 }
@@ -123,8 +132,6 @@ class PurchaseService {
                     purchase_id: purchase.id,
                     product_id: item.product_id,
                     product_name: item.product_name,
-                    grade_id: item.grade_id,
-                    grade_name: item.grade_name,
                     roll_no: item.roll_no,
                     meters: item.meters,
                     price: item.price,
@@ -197,6 +204,17 @@ class PurchaseService {
         return rolls;
     }
 
+    async getSoldRollsByProductId(productId) {
+        const rolls = await prisma.purchaseItem.findMany({
+            where: {
+                product_id: productId,
+                status: PurchaseItemStatus.SOLD
+            }
+        });
+
+        return rolls;
+    }
+
     async getPurchaseReport({ supplierIds, startDate, endDate }) {
         const where = {
             date: {
@@ -218,6 +236,7 @@ class PurchaseService {
                 date: true,
                 total: true,
                 transport: true,
+                transport_charges: true,
                 received_by: true,
                 supplier: {
                     select: {

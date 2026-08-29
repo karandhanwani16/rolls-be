@@ -3,7 +3,7 @@ const purchaseService = require('../services/purchaseService');
 class PurchaseController {
     async getAllPurchases(req, res) {
         try {
-            const purchases = await purchaseService.getAllPurchases();
+            const purchases = await purchaseService.getAllPurchases(req.query.supplier_id);
             return res.json({
                 success: true,
                 data: purchases
@@ -61,6 +61,23 @@ class PurchaseController {
             });
         } catch (error) {
             console.error('Get rolls by product id error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async getSoldRollsByProductId(req, res) {
+        try {
+            const { productId } = req.params;
+            const rolls = await purchaseService.getSoldRollsByProductId(productId);
+            return res.json({
+                success: true,
+                data: rolls
+            });
+        } catch (error) {
+            console.error('Get sold rolls by product id error:', error);
             return res.status(400).json({
                 success: false,
                 error: error.message

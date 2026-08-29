@@ -9,7 +9,6 @@ const router = express.Router();
 const validateProduct = [
     body('name').notEmpty().withMessage('Product name is required'),
     body('description').optional(),
-    body('grade_id').optional().isUUID().withMessage('Invalid grade ID'),
     body('price').optional().isNumeric().withMessage('Price must be a number'),
     body('color').optional()
 ];

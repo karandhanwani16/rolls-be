@@ -124,11 +124,34 @@ class DashboardService {
             }
         });
 
+        const totalSalesReturns = await prisma.saleReturn.aggregate({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            _sum: { total: true }
+        });
+
+        const totalPurchaseReturns = await prisma.purchaseReturn.aggregate({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            _sum: { total: true }
+        });
+
+        const netSales = (totalSales._sum.total || 0) - (totalSalesReturns._sum.total || 0);
+        const netPurchases = (totalPurchases._sum.total || 0) - (totalPurchaseReturns._sum.total || 0);
+
         return {
             summary: {
-                totalSales: totalSales._sum.total || 0,
-                totalPurchases: totalPurchases._sum.total || 0,
-                netProfit: (totalSales._sum.total || 0) - (totalPurchases._sum.total || 0),
+                totalSales: netSales,
+                totalPurchases: netPurchases,
+                netProfit: netSales - netPurchases,
                 totalPaymentsIn: totalPaymentsIn._sum.amount || 0,
                 totalPaymentsOut: totalPaymentsOut._sum.amount || 0
             },

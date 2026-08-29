@@ -39,7 +39,7 @@ const getStockData = async(req, res) => {
         // Format the data with serial numbers and include godown name
         const formattedData = stockData.map((item, index) => ({
             srNo: index + 1,
-            product_name: item.product_name + " - " + item.grade_name,
+            product_name: item.product_name,
             roll_no: item.roll_no,
             meters: item.meters,
             price: item.price,

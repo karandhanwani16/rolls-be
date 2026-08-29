@@ -102,10 +102,29 @@ class SupplierService {
                 debit: payment.amount,
                 credit: 0
             }));
-            // voucherNo: payment.id,
+
+            const purchaseReturns = await prisma.purchaseReturn.findMany({
+                where: {
+                    supplier_id: { in: supplierIdsArray },
+                    date: {
+                        gte: new Date(startDate + 'T00:00:00.000Z'),
+                        lte: new Date(endDate + 'T23:59:59.999Z')
+                    }
+                },
+                orderBy: { date: 'asc' }
+            });
+
+            const formattedReturns = purchaseReturns.map(purchaseReturn => ({
+                srno: srno++,
+                date: purchaseReturn.date,
+                particulars: `Purchase return to ${purchaseReturn.supplier_name}`,
+                voucherNo: purchaseReturn.return_no,
+                debit: purchaseReturn.total,
+                credit: 0
+            }));
 
             // Combine and sort all transactions by date
-            const allTransactions = [...formattedPurchases, ...formattedPayments]
+            const allTransactions = [...formattedPurchases, ...formattedPayments, ...formattedReturns]
                 .sort((a, b) => new Date(a.date) - new Date(b.date));
 
             // Reset srno after sorting

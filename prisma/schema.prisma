@@ -42,6 +42,7 @@ model Customer {
   created_at            DateTime            @default(now())
   updated_at            DateTime            @default(now()) @updatedAt
   sales                 Sale[]
+  sales_returns         SaleReturn[]
   bill_to_bill_payments BillToBillPayment[]
   // Relations
   receive_payments      PaymentIn[]         @relation("ReceivePayments")
@@ -59,21 +60,12 @@ model Supplier {
   city         String?       @map("supplier_city")
   created_at   DateTime      @default(now())
   updated_at   DateTime      @default(now()) @updatedAt
-  payments_out PaymentOut[]
-  purchases    Purchase[]
-  transactions Transaction[]
+  payments_out     PaymentOut[]
+  purchases        Purchase[]
+  purchase_returns PurchaseReturn[]
+  transactions     Transaction[]
 
   @@map("suppliers")
-}
-
-model Grade {
-  id         String    @id @default(uuid()) @map("grade_id")
-  name       String    @map("grade_name")
-  created_at DateTime  @default(now())
-  updated_at DateTime  @default(now()) @updatedAt
-  products   Product[]
-
-  @@map("grades")
 }
 
 model Godown {
@@ -133,11 +125,13 @@ model Purchase {
   purchase_no   String         @map("purchase_no")
   description   String?        @map("purchase_description")
   godown        String?        @map("purchase_godown")
-  transport     String?        @map("purchase_transport")
-  received_by   String?        @map("purchase_received_by")
+  transport           String?        @map("purchase_transport")
+  transport_charges   Float?         @default(0) @map("purchase_transport_charges")
+  received_by         String?        @map("purchase_received_by")
   created_at    DateTime       @default(now())
   updated_at    DateTime       @default(now()) @updatedAt
   items         PurchaseItem[]
+  purchase_returns PurchaseReturn[]
 
   @@map("purchases")
 }
@@ -145,6 +139,7 @@ model Purchase {
 enum PurchaseItemStatus {
   UNSOLD
   SOLD
+  RETURNED
 }
 
 model PurchaseItem {
@@ -153,8 +148,6 @@ model PurchaseItem {
   purchase_id  String
   product_id   String?            @map("product_id")
   product_name String             @map("product_name")
-  grade_id     String?            @map("product_grade_id")
-  grade_name   String?            @map("product_grade_name")
   roll_no      String?            @map("purchase_items_roll_no")
   meters       Float              @map("purchase_items_meters")
   price        Float              @map("purchase_items_price")
@@ -179,12 +172,14 @@ model Sale {
   description   String?                   @map("sales_description")
   hamaal        String?                   @map("sales_hamaal")
   challan_no    String?                   @map("sales_challan_no")
-  maker         String?                   @map("sales_maker")
-  sales_by      String?                   @map("sales_by")
+  maker              String?                   @map("sales_maker")
+  sales_by           String?                   @map("sales_by")
+  transport_charges  Float?                    @default(0) @map("sales_transport_charges")
   created_at    DateTime                  @default(now())
   updated_at    DateTime                  @default(now()) @updatedAt
   items         SaleItem[]
   bill_payments BillToBillPaymentDetail[]
+  sale_returns  SaleReturn[]
 
   @@map("sales")
 }
@@ -195,9 +190,9 @@ model SaleItem {
   sale_id          String   @map("sales_id")
   product_id       String?  @map("product_id")
   product_name     String   @map("product_name")
-  grade_id         String?  @map("grade_id")
   purchase_item_id String?  @map("purchase_item_id")
   roll_no          String?  @map("sales_items_roll_no")
+  shade            String?  @map("sales_items_shade")
   meters           Float    @map("sales_items_meters")
   price            Float    @map("sales_items_price")
   total            Float    @map("sales_items_total")
@@ -205,6 +200,78 @@ model SaleItem {
   updated_at       DateTime @default(now()) @updatedAt
 
   @@map("sales_items")
+}
+
+model SaleReturn {
+  id                 String           @id @default(uuid()) @map("sales_return_id")
+  date               DateTime         @map("sales_return_date")
+  return_no          String           @map("sales_return_no")
+  customer           Customer         @relation(fields: [customer_id], references: [id])
+  customer_id        String           @map("customer_id")
+  customer_name      String           @map("customer_name")
+  sale               Sale?            @relation(fields: [sale_id], references: [id])
+  sale_id            String?          @map("sales_return_sale_id")
+  total              Float            @map("sales_return_total")
+  description        String?          @map("sales_return_description")
+  transport_charges  Float?           @default(0) @map("sales_return_transport_charges")
+  created_at         DateTime         @default(now())
+  updated_at         DateTime         @default(now()) @updatedAt
+  items              SaleReturnItem[]
+
+  @@map("sales_returns")
+}
+
+model SaleReturnItem {
+  id               String     @id @default(uuid()) @map("sales_return_items_id")
+  sale_return      SaleReturn @relation(fields: [sale_return_id], references: [id], onDelete: Cascade)
+  sale_return_id   String     @map("sales_return_id")
+  product_id       String?    @map("product_id")
+  product_name     String     @map("product_name")
+  purchase_item_id String?    @map("purchase_item_id")
+  roll_no          String?    @map("sales_return_items_roll_no")
+  meters           Float      @map("sales_return_items_meters")
+  price            Float      @map("sales_return_items_price")
+  total            Float      @map("sales_return_items_total")
+  created_at       DateTime   @default(now())
+  updated_at       DateTime   @default(now()) @updatedAt
+
+  @@map("sales_return_items")
+}
+
+model PurchaseReturn {
+  id                 String               @id @default(uuid()) @map("purchase_return_id")
+  date               DateTime             @map("purchase_return_date")
+  return_no          String               @map("purchase_return_no")
+  supplier           Supplier             @relation(fields: [supplier_id], references: [id])
+  supplier_id        String
+  supplier_name      String               @map("supplier_name")
+  purchase           Purchase?            @relation(fields: [purchase_id], references: [id])
+  purchase_id        String?              @map("purchase_return_purchase_id")
+  total              Float                @map("purchase_return_total")
+  description        String?              @map("purchase_return_description")
+  transport_charges  Float?               @default(0) @map("purchase_return_transport_charges")
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @default(now()) @updatedAt
+  items              PurchaseReturnItem[]
+
+  @@map("purchase_returns")
+}
+
+model PurchaseReturnItem {
+  id                 String         @id @default(uuid()) @map("purchase_return_items_id")
+  purchase_return    PurchaseReturn @relation(fields: [purchase_return_id], references: [id], onDelete: Cascade)
+  purchase_return_id String         @map("purchase_return_id")
+  product_id         String?        @map("product_id")
+  product_name       String         @map("product_name")
+  purchase_item_id   String?        @map("purchase_item_id")
+  roll_no            String?        @map("purchase_return_items_roll_no")
+  meters             Float          @map("purchase_return_items_meters")
+  price              Float          @map("purchase_return_items_price")
+  total              Float          @map("purchase_return_items_total")
+  created_at         DateTime       @default(now())
+  updated_at         DateTime       @default(now()) @updatedAt
+
+  @@map("purchase_return_items")
 }
 
 model BillToBillPayment {
@@ -254,9 +321,6 @@ model Product {
   id          String   @id @default(uuid()) @map("product_id")
   name        String   @map("product_name")
   description String?  @map("product_description")
-  grade_id    String?  @map("product_grade_id")
-  grade       Grade?   @relation(fields: [grade_id], references: [id])
-  grade_name  String?  @map("product_grade_name")
   price       Float    @map("product_price")
   color       String?  @map("product_color")
   width       String?  @map("product_width")

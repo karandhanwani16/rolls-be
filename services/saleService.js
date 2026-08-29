@@ -7,8 +7,9 @@ const transactionService = require('./transactions');
 
 
 class SaleService {
-    async getAllSales() {
+    async getAllSales(customerId) {
         return await prisma.sale.findMany({
+            where: customerId ? { customer_id: customerId } : undefined,
             include: {
                 customer: true,
                 items: true
@@ -72,13 +73,17 @@ class SaleService {
                 saleDetails.sales_no = await this.generateSalesNumber();
             }
 
+            const transportCharges = parseFloat(saleDetails.transport_charges) || 0;
+            const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
+            const total = Math.round(itemsTotal + transportCharges);
+
             // Create the sale record
             const sale = await prisma.sale.create({
                 data: {
                     customer_id: saleDetails.customer_id,
                     customer_name: saleDetails.customer_name,
                     date: new Date(saleDetails.sales_date),
-                    total: saleDetails.total_amount,
+                    total,
                     sales_no: saleDetails.sales_no,
                     description: saleDetails.description,
                     godown_id: saleDetails.godown_no,
@@ -86,6 +91,7 @@ class SaleService {
                     maker: saleDetails.maker,
                     challan_no: saleDetails.challan_no,
                     sales_by: saleDetails.sales_by,
+                    transport_charges: transportCharges,
                     created_at: new Date(),
                     updated_at: new Date()
                 }
@@ -116,6 +122,7 @@ class SaleService {
                     product_name: item.product_name,
                     purchase_item_id: item.roll_id || null, // Can be null for custom rolls
                     roll_no: item.roll_no,
+                    shade: item.shade || null,
                     meters: item.meters,
                     price: item.price,
                     total: item.total_price,
@@ -148,9 +155,10 @@ class SaleService {
     async updateSale(id, saleData) {
         const { items, ...saleDetails } = saleData;
 
-        const actualTotal = items.reduce((sum, item) => {
-            return sum + item.total_price
-        }, 0)
+        const transportCharges = parseFloat(saleDetails.transport_charges) || 0;
+        const actualTotal = (items || []).reduce((sum, item) => {
+            return sum + (item.total_price || 0)
+        }, 0) + transportCharges
         const roundedTotal = Math.round(actualTotal);
 
 
@@ -196,6 +204,7 @@ class SaleService {
                     maker: saleDetails.maker,
                     challan_no: saleDetails.challan_no,
                     sales_by: saleDetails.sales_by,
+                    transport_charges: transportCharges,
                     updated_at: new Date()
                 }
             });
@@ -231,6 +240,7 @@ class SaleService {
                     product_name: item.product_name,
                     purchase_item_id: item.purchase_item_id || null, // Can be null for custom rolls
                     roll_no: item.roll_no,
+                    shade: item.shade || null,
                     meters: item.meters,
                     price: item.price,
                     total: item.total_price,
@@ -308,24 +318,9 @@ class SaleService {
         return { message: 'Sale deleted successfully' };
     }
 
-    async generateInvoicePDF(saleId) {
+    async generateInvoicePDF(saleId, documentType = 'bill') {
         try {
-            const sale = await this.getSaleById(saleId);
-
-            const invoiceData = {
-                customer: sale.customer_name,
-                date: format(new Date(sale.date), 'dd/MM/yyyy'),
-                items: sale.items.map(item => ({
-                    name: item.product_name,
-                    qty: item.meters,
-                    price: item.price
-                })),
-                total: sale.total,
-                sales_no: sale.sales_no,
-                challan_no: sale.challan_no,
-                godown: sale.godown,
-                hamaal: sale.hamaal
-            };
+            const html = await this.generateInvoiceHTML(saleId, documentType);
 
             const browser = await puppeteer.launch({
                 headless: 'new',
@@ -333,7 +328,6 @@ class SaleService {
             });
 
             const page = await browser.newPage();
-            const html = invoiceTemplate(invoiceData);
 
             await page.setContent(html, { waitUntil: 'networkidle0' });
 
@@ -356,7 +350,7 @@ class SaleService {
         }
     }
 
-    async generateInvoiceHTML(saleId) {
+    async generateInvoiceHTML(saleId, documentType = 'bill') {
         try {
             const sale = await this.getSaleById(saleId);
 
@@ -365,17 +359,10 @@ class SaleService {
             // Fetch all products in one query
             const products = await prisma.product.findMany({
                 where: { id: { in: productIds } },
-                include: {
-                    grade: true, // This assumes 'gradeRavle' is the correct relation name
-                },
             });
             // Map product_id to width
             const productWidthMap = {};
             products.forEach(p => { productWidthMap[p.id] = p.width });
-
-            const productGradeMap = {};
-            products.forEach(p => { productGradeMap[p.id] = p.grade.name });
-
 
             const invoiceData = {
                 customer: sale.customer_name,
@@ -386,18 +373,19 @@ class SaleService {
                     price: item.price,
                     width: productWidthMap[item.product_id] || '',
                     roll_no: item.roll_no,
+                    shade: item.shade || '',
                     mts: item.meters,
                     amount: item.total,
-                    grade: productGradeMap[item.product_id] || ''
                 })),
                 total: sale.total,
+                transport_charges: sale.transport_charges || 0,
                 sales_no: sale.sales_no,
                 challan_no: sale.challan_no,
-                godown: sale.godown.name,
+                godown: sale.godown?.name || '',
                 hamaal: sale.hamaal,
                 maker: sale.maker,
             };
-            return invoiceTemplate(invoiceData);
+            return invoiceTemplate(invoiceData, documentType);
         } catch (error) {
             console.error('Error generating invoice HTML:', error);
             throw new Error('Failed to generate invoice HTML');

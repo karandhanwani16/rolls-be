@@ -20,11 +20,10 @@ class ProductController {
 
     async createProduct(req, res) {
         try {
-            const { name, description, grade_id, price, color, width } = req.body;
+            const { name, description, price, color, width } = req.body;
             const product = await productService.createProduct({
                 name,
                 description,
-                grade_id,
                 price: price ? parseFloat(price) : null,
                 color,
                 width
@@ -45,11 +44,10 @@ class ProductController {
 
     async updateProduct(req, res) {
         try {
-            const { name, description, grade_id, price, color, width } = req.body;
+            const { name, description, price, color, width } = req.body;
             const product = await productService.updateProduct(req.params.id, {
                 name,
                 description,
-                grade_id,
                 price: price ? parseFloat(price) : null,
                 color,
                 width
