@@ -9,7 +9,8 @@ const generateExcel = (data) => {
         'Sr. No.': item.srNo,
         'Product Name': item.productName,
         'Roll No.': item.rollNo,
-        'Meters': item.meters,
+        'Quantity': item.meters,
+        'Unit': item.unit || 'm',
         'Price': new Intl.NumberFormat('en-IN', {
             style: 'currency',
             currency: 'INR',

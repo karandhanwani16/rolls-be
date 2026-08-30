@@ -85,6 +85,29 @@ class PaymentInController {
             });
         }
     }
+
+    async getWatavReport(req, res) {
+        try {
+            const { startDate, endDate, watavCustomerId } = req.query;
+            const report = await paymentInService.getWatavReport({
+                startDate,
+                endDate,
+                watavCustomerId: watavCustomerId || undefined,
+            });
+            return res.json({
+                success: true,
+                data: report.transactions,
+                byWatav: report.byWatav,
+                summary: report.summary,
+            });
+        } catch (error) {
+            console.error('Get watav report error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
 }
 
 module.exports = new PaymentInController();

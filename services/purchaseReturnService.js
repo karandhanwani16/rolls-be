@@ -1,6 +1,7 @@
 const prisma = require('../prisma/client');
 const { PurchaseItemStatus } = require('@prisma/client');
 const transactionService = require('./transactions');
+const { normalizeUnit } = require('../utils/quantityUnits');
 
 const returnedItems = (items = []) =>
     (items || []).filter((item) => parseFloat(item.meters) > 0);
@@ -98,6 +99,7 @@ class PurchaseReturnService {
                         purchase_item_id: item.purchase_item_id || item.roll_id || null,
                         roll_no: item.roll_no,
                         meters: item.meters,
+                        unit: normalizeUnit(item.unit),
                         price: item.price,
                         total: item.total_price
                     }))
@@ -179,6 +181,7 @@ class PurchaseReturnService {
                         purchase_item_id: item.purchase_item_id || item.roll_id || null,
                         roll_no: item.roll_no,
                         meters: item.meters,
+                        unit: normalizeUnit(item.unit),
                         price: item.price,
                         total: item.total_price
                     }))

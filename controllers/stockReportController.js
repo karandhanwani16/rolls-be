@@ -42,6 +42,7 @@ const getStockData = async(req, res) => {
             product_name: item.product_name,
             roll_no: item.roll_no,
             meters: item.meters,
+            unit: item.unit || 'm',
             price: item.price,
             godown: item.purchase?.godown ? godownMap[item.purchase.godown] || 'Unknown' : 'N/A'
         }));

@@ -4,6 +4,7 @@ const paymentInController = require('../controllers/paymentInController');
 const router = express.Router();
 
 router.get('/', paymentInController.getAllPaymentsIn);
+router.get('/watav-report', paymentInController.getWatavReport);
 router.get('/:id', paymentInController.getPaymentInById);
 router.post('/', paymentInController.createPaymentIn);
 router.put('/:id', paymentInController.updatePaymentIn);

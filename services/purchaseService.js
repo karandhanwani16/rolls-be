@@ -1,6 +1,7 @@
 const { PurchaseItemStatus } = require('@prisma/client');
 const prisma = require('../prisma/client');
 const transactionService = require('./transactions');
+const { normalizeUnit } = require('../utils/quantityUnits');
 
 class PurchaseService {
     async getAllPurchases(supplierId) {
@@ -66,6 +67,7 @@ class PurchaseService {
                     product_name: item.product_name,
                     roll_no: item.roll_no,
                     meters: item.meters,
+                    unit: normalizeUnit(item.unit),
                     price: item.price,
                     total: item.total_price,
                     status: PurchaseItemStatus.UNSOLD,
@@ -134,6 +136,7 @@ class PurchaseService {
                     product_name: item.product_name,
                     roll_no: item.roll_no,
                     meters: item.meters,
+                    unit: normalizeUnit(item.unit),
                     price: item.price,
                     total: item.total_price,
                     status: PurchaseItemStatus.UNSOLD,

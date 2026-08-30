@@ -142,6 +142,93 @@ class PaymentInService {
             throw new Error(`Failed to delete payment in: ${error.message}`);
         }
     }
+
+    /**
+     * Watav entries: receive_id !== actual_id.
+     * "Paid to Watav" = charges collected by the receive (watav) party.
+     */
+    async getWatavReport({ startDate, endDate, watavCustomerId }) {
+        try {
+            const dateFilter = {};
+            if (startDate) {
+                dateFilter.gte = new Date(startDate + 'T00:00:00.000Z');
+            }
+            if (endDate) {
+                dateFilter.lte = new Date(endDate + 'T23:59:59.999Z');
+            }
+
+            const payments = await prisma.paymentIn.findMany({
+                where: {
+                    ...(Object.keys(dateFilter).length > 0
+                        ? { payment_date: dateFilter }
+                        : {}),
+                    receive_id: watavCustomerId || { not: null },
+                    actual_id: { not: null },
+                },
+                include: {
+                    receive_customer: true,
+                    actual_customer: true,
+                },
+                orderBy: {
+                    payment_date: 'asc',
+                },
+            });
+
+            const watavPayments = payments.filter(
+                (payment) => payment.receive_id && payment.actual_id && payment.receive_id !== payment.actual_id
+            );
+
+            const transactions = watavPayments.map((payment, index) => ({
+                srno: index + 1,
+                id: payment.id,
+                date: payment.payment_date || payment.created_at,
+                watavCustomerId: payment.receive_id,
+                watavCustomerName: payment.receive_customer?.name || 'Unknown',
+                actualCustomerId: payment.actual_id,
+                actualCustomerName: payment.actual_customer?.name || 'Unknown',
+                receivedAmount: payment.received_amount || 0,
+                paidToWatav: payment.charges || 0,
+                actualAmount: payment.actual_amount || 0,
+                type: payment.type,
+                description: payment.description || '',
+            }));
+
+            const byWatav = {};
+            for (const row of transactions) {
+                if (!byWatav[row.watavCustomerId]) {
+                    byWatav[row.watavCustomerId] = {
+                        watavCustomerId: row.watavCustomerId,
+                        watavCustomerName: row.watavCustomerName,
+                        entries: 0,
+                        totalReceived: 0,
+                        totalPaidToWatav: 0,
+                        totalActualAmount: 0,
+                    };
+                }
+                byWatav[row.watavCustomerId].entries += 1;
+                byWatav[row.watavCustomerId].totalReceived += row.receivedAmount;
+                byWatav[row.watavCustomerId].totalPaidToWatav += row.paidToWatav;
+                byWatav[row.watavCustomerId].totalActualAmount += row.actualAmount;
+            }
+
+            const summary = {
+                totalEntries: transactions.length,
+                totalReceived: transactions.reduce((sum, row) => sum + row.receivedAmount, 0),
+                totalPaidToWatav: transactions.reduce((sum, row) => sum + row.paidToWatav, 0),
+                totalActualAmount: transactions.reduce((sum, row) => sum + row.actualAmount, 0),
+            };
+
+            return {
+                transactions,
+                byWatav: Object.values(byWatav).sort(
+                    (a, b) => b.totalPaidToWatav - a.totalPaidToWatav
+                ),
+                summary,
+            };
+        } catch (error) {
+            throw new Error(`Failed to fetch watav report: ${error.message}`);
+        }
+    }
 }
 
 module.exports = new PaymentInService();

@@ -1,17 +1,20 @@
 module.exports = (invoiceData, documentType = 'bill') => {
         const isChallan = documentType === 'challan';
+        const { normalizeUnit, unitShort, unitAbbr, formatUnitTotals, sumQuantityByUnit } = require('../utils/quantityUnits');
 
-        // Group items by name, width, and (for bills) price
+        // Group items by name, width, unit, and (for bills) price
         const grouped = {};
         invoiceData.items.forEach((item) => {
             const name = `${item.name || ''}`.trim().toLowerCase();
             const width = (item.width || "").trim();
+            const unit = normalizeUnit(item.unit);
             const price = parseFloat(item.price);
-            const key = isChallan ? `${name}||${width}` : `${name}||${width}||${price}`;
+            const key = isChallan ? `${name}||${width}||${unit}` : `${name}||${width}||${unit}||${price}`;
             if (!grouped[key]) {
                 grouped[key] = {
                     name: item.name || '',
                     width: item.width,
+                    unit,
                     price: item.price,
                     roll_nos: [],
                     shades: [],
@@ -28,11 +31,10 @@ module.exports = (invoiceData, documentType = 'bill') => {
         });
         const groupedItems = Object.values(grouped);
 
-        // Calculate total meters
-        const totalMeters = groupedItems.reduce(
-            (sum, group) => sum + group.total_mts,
-            0
+        const unitTotals = sumQuantityByUnit(
+            invoiceData.items.map((item) => ({ meters: item.mts, unit: item.unit })),
         );
+        const totalQtyLabel = formatUnitTotals(unitTotals);
 
         // Format currency values
         const formatCurrency = (value) => {
@@ -64,7 +66,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Width</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Roll No.</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Shade</th>
-            <th style="border-bottom:1px solid #000;">MTS</th>
+            <th style="border-bottom:1px solid #000;">Qty</th>
           </tr>`
             : `
           <tr id="heading">
@@ -73,7 +75,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Width</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Roll No.</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Shade</th>
-            <th style="border-right:1px solid #000;border-bottom:1px solid #000;">MTS</th>
+            <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Qty</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Rate</th>
             <th style="border-bottom:1px solid #000;">Amount</th>
           </tr>`;
@@ -87,9 +89,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
               .map((shade) => `<div>${shade || "&nbsp;"}</div>`)
               .join("");
             const metersHtml = group.meters
-              .map((m) => `<div>${m.toFixed(2)}</div>`)
+              .map((m) => `<div>${m.toFixed(2)} ${unitAbbr(group.unit)}</div>`)
               .join("");
-            const metersCell = `${metersHtml}<div style="font-size:18px;line-height:10px;padding-bottom:10px;">________</div><div style="font-weight:bold;">${group.total_mts.toFixed(2)}</div>`;
+            const metersCell = `${metersHtml}<div style="font-size:18px;line-height:10px;padding-bottom:10px;">________</div><div style="font-weight:bold;">${group.total_mts.toFixed(2)} ${unitAbbr(group.unit)}</div>`;
 
             if (isChallan) {
               return `
@@ -128,12 +130,12 @@ module.exports = (invoiceData, documentType = 'bill') => {
         const footerRows = isChallan
             ? `
         <tr style="border-top:1px solid #000;">
-          <td colspan="5" style="border-right:1px solid #000;font-weight: bold;text-align: right;">Total Mtr. : ${totalMeters.toFixed(2)}</td>
+          <td colspan="5" style="border-right:1px solid #000;font-weight: bold;text-align: right;">Total Qty : ${totalQtyLabel}</td>
           <td></td>
         </tr>`
             : `
         <tr style="border-top:1px solid #000;">
-          <td colspan="5" style="border-right:1px solid #000;border-bottom:1px solid #000;font-weight: bold;text-align: right;">Total Mtr. : ${totalMeters.toFixed(2)}</td>
+          <td colspan="5" style="border-right:1px solid #000;border-bottom:1px solid #000;font-weight: bold;text-align: right;">Total Qty : ${totalQtyLabel}</td>
           <td colspan="2" style="font-weight: bold;border-right:1px solid #000;border-bottom:1px solid #000;">Sub Total</td>
           <td style="text-align: right;border-bottom:1px solid #000;">${formatCurrency(itemsTotal || 0)}</td>
         </tr>

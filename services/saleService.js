@@ -4,6 +4,7 @@ const { PurchaseItemStatus } = require('@prisma/client');
 const puppeteer = require('puppeteer');
 const invoiceTemplate = require('./invoiceTemplate');
 const transactionService = require('./transactions');
+const { normalizeUnit } = require('../utils/quantityUnits');
 
 
 class SaleService {
@@ -124,6 +125,7 @@ class SaleService {
                     roll_no: item.roll_no,
                     shade: item.shade || null,
                     meters: item.meters,
+                    unit: normalizeUnit(item.unit),
                     price: item.price,
                     total: item.total_price,
                     created_at: new Date(),
@@ -242,6 +244,7 @@ class SaleService {
                     roll_no: item.roll_no,
                     shade: item.shade || null,
                     meters: item.meters,
+                    unit: normalizeUnit(item.unit),
                     price: item.price,
                     total: item.total_price,
                     created_at: new Date(),
@@ -375,6 +378,7 @@ class SaleService {
                     roll_no: item.roll_no,
                     shade: item.shade || '',
                     mts: item.meters,
+                    unit: item.unit || 'm',
                     amount: item.total,
                 })),
                 total: sale.total,

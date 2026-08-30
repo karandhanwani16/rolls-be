@@ -30,7 +30,7 @@ const generatePDF = async(data) => {
                             <th>Sr. No.</th>
                             <th>Product Name</th>
                             <th>Roll No.</th>
-                            <th>Meters</th>
+                            <th>Quantity</th>
                             <th>Price</th>
                         </tr>
                     </thead>
@@ -40,7 +40,7 @@ const generatePDF = async(data) => {
                                 <td>${index + 1}</td>
                                 <td>${item.productName}</td>
                                 <td>${item.rollNo}</td>
-                                <td>${item.meters}</td>
+                                <td>${item.meters} ${item.unit || 'm'}</td>
                                 <td>${new Intl.NumberFormat('en-IN', {
                                     style: 'currency',
                                     currency: 'INR',

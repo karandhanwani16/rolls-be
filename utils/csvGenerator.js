@@ -5,7 +5,8 @@ const generateCSV = (data) => {
         { label: 'Sr. No.', value: 'srNo' },
         { label: 'Product Name', value: 'productName' },
         { label: 'Roll No.', value: 'rollNo' },
-        { label: 'Meters', value: 'meters' },
+        { label: 'Quantity', value: 'meters' },
+        { label: 'Unit', value: (row) => row.unit || 'm' },
         {
             label: 'Price',
             value: (row) => new Intl.NumberFormat('en-IN', {
