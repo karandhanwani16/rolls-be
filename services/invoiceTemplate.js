@@ -7,6 +7,10 @@ module.exports = (invoiceData, documentType = 'bill') => {
         sumQuantityByUnit,
     } = require('../utils/quantityUnits');
 
+    // How many roll lines fit under header + column titles on A4 at full font size.
+    // Leave room so page 1 closes cleanly; remaining rolls + summary go to next page(s).
+    const ROLLS_PER_PAGE = 18;
+
     const grouped = {};
     invoiceData.items.forEach((item) => {
         const name = `${item.name || ''}`.trim().toLowerCase();
@@ -37,6 +41,29 @@ module.exports = (invoiceData, documentType = 'bill') => {
     });
     const groupedItems = Object.values(grouped);
 
+    // Flatten to one visual line per roll, keeping group metadata for first/last of group
+    const rollLines = [];
+    groupedItems.forEach((group) => {
+        const count = Math.max(group.roll_nos.length, 1);
+        group.roll_nos.forEach((rollNo, idx) => {
+            rollLines.push({
+                group,
+                rollNo,
+                shade: (group.shades || [])[idx] || '',
+                meters: group.meters[idx] || 0,
+                isFirst: idx === 0,
+                isLast: idx === count - 1,
+                count,
+            });
+        });
+    });
+
+    const pages = [];
+    for (let i = 0; i < Math.max(rollLines.length, 1); i += ROLLS_PER_PAGE) {
+        pages.push(rollLines.slice(i, i + ROLLS_PER_PAGE));
+    }
+    if (pages.length === 0) pages.push([]);
+
     const unitTotals = sumQuantityByUnit(
         invoiceData.items.map((item) => ({ meters: item.mts, unit: item.unit })),
     );
@@ -61,7 +88,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const heading = isChallan ? 'ON APPROVAL / DELIVERY CHALLAN' : 'SALES BILL';
     const colCount = isChallan ? 6 : 8;
 
-    // Wider Qty so "58.00 m" stays on one line at full font size
     const colgroup = isChallan
         ? `<col style="width:8%"><col style="width:22%"><col style="width:10%"><col style="width:15%"><col style="width:15%"><col style="width:30%">`
         : `<col style="width:6%"><col style="width:17%"><col style="width:8%"><col style="width:12%"><col style="width:11%"><col style="width:17%"><col style="width:12%"><col style="width:17%">`;
@@ -88,52 +114,38 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th class="no-right-border">Amount</th>
           </tr>`;
 
-    // One row per roll so Chrome does not shrink a huge unbreakable group to fit one page
-    const itemRows = groupedItems
-        .map((group) => {
-            const count = Math.max(group.roll_nos.length, 1);
-            return group.roll_nos
-                .map((rollNo, idx) => {
-                    const isFirst = idx === 0;
-                    const isLast = idx === count - 1;
-                    const shade = (group.shades || [])[idx] || '';
-                    const meters = group.meters[idx] || 0;
-                    const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`;
+    const renderItemRows = (lines) => {
+        if (!lines.length) {
+            return `<tr><td colspan="${colCount}" class="no-right-border" style="padding:20px;text-align:center;">No items</td></tr>`;
+        }
+        return lines
+            .map((line) => {
+                const { group, rollNo, shade, meters, isFirst, isLast, count } = line;
+                const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`;
+                const groupTotalHtml = isLast
+                    ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`
+                    : '';
 
-                    if (isChallan) {
-                        return `
-          <tr class="item-row${isLast ? ' group-end' : ''}">
-            <td>${isFirst ? count : ''}</td>
-            <td>${isFirst ? group.name || '' : ''}</td>
-            <td>${isFirst ? group.width || '' : ''}</td>
-            <td>${rollNo || '&nbsp;'}</td>
-            <td>${shade || '&nbsp;'}</td>
-            <td class="qty-cell no-right-border">
-              ${qtyHtml}
-              ${
-                  isLast
-                      ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`
-                      : ''
-              }
-            </td>
-          </tr>`;
-                    }
-
+                if (isChallan) {
                     return `
-          <tr class="item-row${isLast ? ' group-end' : ''}">
+          <tr class="item-row">
             <td>${isFirst ? count : ''}</td>
             <td>${isFirst ? group.name || '' : ''}</td>
             <td>${isFirst ? group.width || '' : ''}</td>
             <td>${rollNo || '&nbsp;'}</td>
             <td>${shade || '&nbsp;'}</td>
-            <td class="qty-cell">
-              ${qtyHtml}
-              ${
-                  isLast
-                      ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`
-                      : ''
-              }
-            </td>
+            <td class="qty-cell no-right-border">${qtyHtml}${groupTotalHtml}</td>
+          </tr>`;
+                }
+
+                return `
+          <tr class="item-row">
+            <td>${isFirst ? count : ''}</td>
+            <td>${isFirst ? group.name || '' : ''}</td>
+            <td>${isFirst ? group.width || '' : ''}</td>
+            <td>${rollNo || '&nbsp;'}</td>
+            <td>${shade || '&nbsp;'}</td>
+            <td class="qty-cell">${qtyHtml}${groupTotalHtml}</td>
             <td class="align-bottom">${
                 isLast
                     ? `<div class="qty-rule">______</div>${group.price || ''}`
@@ -145,10 +157,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
                     : ''
             }</td>
           </tr>`;
-                })
-                .join('');
-        })
-        .join('');
+            })
+            .join('');
+    };
 
     const footerRows = isChallan
         ? `
@@ -184,6 +195,68 @@ module.exports = (invoiceData, documentType = 'bill') => {
           <td class="no-right-border text-right">${formatCurrency(roundedTotal)}</td>
         </tr>`;
 
+    const pageHtml = pages
+        .map((lines, pageIndex) => {
+            const isLastPage = pageIndex === pages.length - 1;
+            const continued =
+                pages.length > 1 && pageIndex > 0
+                    ? `<div class="continued">Continued…</div>`
+                    : '';
+
+            return `
+  <div class="page">
+    <div class="header">
+      <div class="sub-header">${heading}</div>
+      <div class="company-name">MOHIT TRADERS</div>
+      <div class="address">ULHASNAGAR 421005</div>
+      ${continued}
+    </div>
+    <div class="details-row">
+      <div class="details-col">
+        <div><strong>To,</strong></div>
+        <div><strong>${invoiceData.customer || ''}</strong></div>
+        <div>Maker : ${invoiceData.maker || '-'}</div>
+      </div>
+      <div class="details-col right">
+        <div>Bill No.: ${invoiceData.sales_no || '-'}</div>
+        <div>Date: ${invoiceData.date || ''}</div>
+        <div>Hamal: ${invoiceData.hamaal || '-'}</div>
+        <div>Challan No.: ${invoiceData.challan_no || ''}</div>
+      </div>
+    </div>
+    <table class="items-table">
+      <colgroup>${colgroup}</colgroup>
+      <thead>
+        ${columnHeaderRow}
+      </thead>
+      <tbody>
+        ${renderItemRows(lines)}
+      </tbody>
+    </table>
+    ${
+        isLastPage
+            ? `<div class="footer-block">
+      <table class="items-table footer-table">
+        <colgroup>${colgroup}</colgroup>
+        <tbody>
+          ${footerRows}
+        </tbody>
+      </table>
+      ${
+          isChallan
+              ? `<div class="challan-note">
+        कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
+        रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
+      </div>`
+              : ''
+      }
+    </div>`
+            : ''
+    }
+  </div>`;
+        })
+        .join('');
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -192,7 +265,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
   <style>
     @page {
       size: A4;
-      margin: 10mm;
+      margin: 8mm;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -201,19 +274,27 @@ module.exports = (invoiceData, documentType = 'bill') => {
       background: #fff;
       color: #111;
       font-family: Arial, Helvetica, sans-serif;
-      /* Prevent browser "fit to page" look when opened on screen */
-      zoom: 1;
-      transform: none;
     }
-    .sheet {
-      width: 190mm;
-      margin: 0 auto;
+    .page {
+      width: 194mm;
+      min-height: 277mm;
+      margin: 0 auto 12px;
       background: #fff;
+      display: flex;
+      flex-direction: column;
+      page-break-after: always;
+      break-after: page;
+    }
+    .page:last-child {
+      page-break-after: auto;
+      break-after: auto;
+      margin-bottom: 0;
     }
     .header {
       border: 1px solid #000;
       text-align: center;
       padding: 10px;
+      flex-shrink: 0;
     }
     .company-name {
       font-size: 24px;
@@ -224,10 +305,19 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 14px;
       font-weight: 700;
     }
+    .address {
+      font-size: 14px;
+    }
+    .continued {
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
     .details-row {
       border: 1px solid #000;
       border-top: none;
       display: flex;
+      flex-shrink: 0;
     }
     .details-col {
       flex: 1;
@@ -244,17 +334,15 @@ module.exports = (invoiceData, documentType = 'bill') => {
       table-layout: fixed;
       border: 1px solid #000;
       border-top: none;
+      /* Each page is its own closed table — border closes at bottom of this page */
+      flex: 1 1 auto;
     }
-    thead {
-      display: table-header-group;
-    }
-    /* Allow individual roll rows to break across pages (do NOT avoid on whole groups) */
-    tr.item-row {
-      page-break-inside: avoid;
-      break-inside: avoid;
+    table.footer-table {
+      border-top: none;
+      flex: 0 0 auto;
     }
     th, td {
-      padding: 6px 8px;
+      padding: 5px 8px;
       text-align: left;
       font-size: 21px;
       font-weight: 700;
@@ -264,7 +352,10 @@ module.exports = (invoiceData, documentType = 'bill') => {
     th {
       border-bottom: 1px solid #000;
       font-size: 18px;
-      padding: 6px 4px 10px;
+      padding: 6px 4px 8px;
+    }
+    tbody tr.item-row td {
+      border-bottom: none;
     }
     .no-right-border { border-right: none !important; }
     .bottom-border { border-bottom: 1px solid #000; }
@@ -276,9 +367,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 21px;
       line-height: 1.25;
     }
-    .qty-total {
-      font-weight: 700;
-    }
+    .qty-total { font-weight: 700; }
     .qty-rule {
       font-size: 18px;
       line-height: 10px;
@@ -289,6 +378,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 18px;
     }
     .footer-block {
+      flex-shrink: 0;
       page-break-inside: avoid;
       break-inside: avoid;
     }
@@ -299,81 +389,28 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 14px;
       font-weight: 700;
       line-height: 1.45;
-      page-break-inside: avoid;
-      break-inside: avoid;
     }
     @media print {
       html, body {
         width: auto !important;
-        height: auto !important;
-        zoom: 1 !important;
-        transform: none !important;
+        background: #fff;
       }
-      .sheet {
+      .page {
         width: 100% !important;
-        max-width: none !important;
+        min-height: 0;
+        margin: 0;
+        page-break-after: always;
+        break-after: page;
       }
-      /* Hint Chrome to use actual size, not shrink-to-fit */
-      body {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+      .page:last-child {
+        page-break-after: auto;
+        break-after: auto;
       }
     }
   </style>
 </head>
 <body>
-  <div class="sheet">
-    <table class="items-table">
-      <colgroup>${colgroup}</colgroup>
-      <thead>
-        <tr class="repeat-header">
-          <td colspan="${colCount}" style="padding:0;border:none;font-size:inherit;">
-            <div class="header">
-              <div class="sub-header">${heading}</div>
-              <div class="company-name">MOHIT TRADERS</div>
-              <div style="font-size:14px;">ULHASNAGAR 421005</div>
-            </div>
-            <div class="details-row">
-              <div class="details-col">
-                <div><strong>To,</strong></div>
-                <div><strong>${invoiceData.customer || ''}</strong></div>
-                <div>Maker : ${invoiceData.maker || '-'}</div>
-              </div>
-              <div class="details-col right">
-                <div>Bill No.: ${invoiceData.sales_no || '-'}</div>
-                <div>Date: ${invoiceData.date || ''}</div>
-                <div>Hamal: ${invoiceData.hamaal || '-'}</div>
-                <div>Challan No.: ${invoiceData.challan_no || ''}</div>
-              </div>
-            </div>
-          </td>
-        </tr>
-        ${columnHeaderRow}
-      </thead>
-      <tbody>
-        ${
-            itemRows ||
-            `<tr><td colspan="${colCount}" class="no-right-border" style="padding:20px;text-align:center;">No items</td></tr>`
-        }
-      </tbody>
-    </table>
-    <div class="footer-block">
-      <table class="items-table" style="border-top:none;">
-        <colgroup>${colgroup}</colgroup>
-        <tbody>
-          ${footerRows}
-        </tbody>
-      </table>
-      ${
-          isChallan
-              ? `<div class="challan-note">
-        कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
-        रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
-      </div>`
-              : ''
-      }
-    </div>
-  </div>
+  ${pageHtml}
 </body>
 </html>`;
 };
