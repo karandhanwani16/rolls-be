@@ -40,9 +40,15 @@ class BillToBillPaymentService {
                 include: { bill_payments: true }
             });
 
-            // Get all payment_ins for this customer
+            // Customer-linked payments only (exclude standalone watav vendor entries)
             let paymentsIn = await prisma.paymentIn.findMany({
-                where: { actual_id: customerId },
+                where: {
+                    actual_id: customerId,
+                    NOT: {
+                        payment_category: 'VATAV',
+                        entry_type: 'STANDALONE',
+                    },
+                },
                 orderBy: { created_at: 'asc' }
             });
 
@@ -92,9 +98,11 @@ class BillToBillPaymentService {
                 };
             });
 
-            // Calculate total payment amount available
+            // Pool uses the same amount credited to the customer ledger:
+            // NORMAL → actual/received; VATAV customer payment → gross received_amount
+            const { customerCreditAmount } = require('./paymentInService');
             const totalPaymentAmount = paymentsIn.reduce(
-                (total, payment) => total + payment.received_amount,
+                (total, payment) => total + customerCreditAmount(payment),
                 0
             ) + billOverflowAmount;
 

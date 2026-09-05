@@ -5,6 +5,8 @@ const router = express.Router();
 
 router.get('/', paymentInController.getAllPaymentsIn);
 router.get('/watav-report', paymentInController.getWatavReport);
+router.post('/collect', paymentInController.collectWatavEntries);
+router.post('/uncollect', paymentInController.uncollectWatavEntries);
 router.get('/:id', paymentInController.getPaymentInById);
 router.post('/', paymentInController.createPaymentIn);
 router.put('/:id', paymentInController.updatePaymentIn);

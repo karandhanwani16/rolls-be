@@ -84,17 +84,24 @@ model Godown {
 }
 
 model PaymentIn {
-  id              String    @id @default(cuid())
-  payment_date    DateTime? @map("payment_date")
-  receive_id      String?
-  actual_id       String?
-  received_amount Float
-  actual_amount   Float
-  charges         Float?
-  type            String
-  description     String?
-  created_at      DateTime  @default(now())
-  updated_at      DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  payment_date       DateTime? @map("payment_date")
+  receive_id         String?   // Watav vendor for VATAV; same as actual_id for NORMAL
+  actual_id          String?   // Paying customer (required for NORMAL / VATAV customer payment)
+  received_amount    Float     // Gross amount
+  actual_amount      Float     // Net = received_amount - charges
+  charges            Float?
+  type               String    // Instrument: cash / cheque / bank_transfer / upi / other
+  description        String?
+  // NORMAL | VATAV — separates normal payments from watav money flows
+  payment_category   String    @default("NORMAL") @map("payment_category")
+  // For VATAV only: CUSTOMER_PAYMENT | STANDALONE
+  entry_type         String?   @map("entry_type")
+  // For VATAV only: PENDING | COLLECTED
+  collection_status  String?   @map("collection_status")
+  collection_date    DateTime? @map("collection_date")
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
 
   // Relations
   receive_customer Customer? @relation("ReceivePayments", fields: [receive_id], references: [id])
@@ -102,6 +109,8 @@ model PaymentIn {
 
   @@index([receive_id])
   @@index([actual_id])
+  @@index([payment_category])
+  @@index([collection_status])
   @@map("paymentin")
 }
 

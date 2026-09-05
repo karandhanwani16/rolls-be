@@ -60,12 +60,20 @@ class CustomerService {
     }
 
     formatCustomerPayment(payment) {
+        const { customerCreditAmount, PAYMENT_CATEGORY } = require('./paymentInService');
+        const isWatav = payment.payment_category === PAYMENT_CATEGORY.VATAV;
+        const credit = customerCreditAmount(payment);
         return {
             date: payment.payment_date,
-            particulars: `Payment from ${payment.actual_customer?.name || 'Unknown'}`,
+            particulars: isWatav
+                ? `Watav payment from ${payment.actual_customer?.name || 'Unknown'}`
+                : `Payment from ${payment.actual_customer?.name || 'Unknown'}`,
             voucherNo: payment.id,
             debit: 0,
-            credit: payment.actual_amount,
+            // VATAV customer payments credit the full gross; NORMAL uses actual_amount
+            credit,
+            paymentCategory: payment.payment_category || PAYMENT_CATEGORY.NORMAL,
+            entryType: payment.entry_type || null,
         };
     }
 
@@ -98,8 +106,13 @@ class CustomerService {
                 where: {
                     actual_id: { in: customerIds },
                     payment_date: dateFilter,
+                    // Standalone watav entries have no actual_id; exclude any misfires
+                    NOT: {
+                        payment_category: 'VATAV',
+                        entry_type: 'STANDALONE',
+                    },
                 },
-                include: { actual_customer: true },
+                include: { actual_customer: true, receive_customer: true },
                 orderBy: { payment_date: 'asc' },
             }),
             prisma.saleReturn.findMany({
@@ -142,6 +155,9 @@ class CustomerService {
                         closingBalance: 0,
                         totalDebit: 0,
                         totalCredit: 0,
+                        normalPayments: 0,
+                        vatavPayments: 0,
+                        totalPayments: 0,
                     },
                 };
             }
@@ -154,6 +170,9 @@ class CustomerService {
                 closingBalance: 0,
                 totalDebit: 0,
                 totalCredit: 0,
+                normalPayments: 0,
+                vatavPayments: 0,
+                totalPayments: 0,
             };
 
             for (const customer of customers) {
@@ -162,6 +181,17 @@ class CustomerService {
                     rangeStart,
                     rangeEnd
                 );
+
+                for (const row of customerPeriodRows) {
+                    if (row.credit > 0 && row.paymentCategory) {
+                        if (row.paymentCategory === 'VATAV') {
+                            summaryTotals.vatavPayments += row.credit;
+                        } else {
+                            summaryTotals.normalPayments += row.credit;
+                        }
+                        summaryTotals.totalPayments += row.credit;
+                    }
+                }
 
                 let prePeriodRows = [];
                 if (customer.opening_balance_date) {
@@ -207,6 +237,8 @@ class CustomerService {
                     balance: running,
                     isOpeningBalance: row.isOpeningBalance || false,
                     isBroughtForward: row.isBroughtForward || false,
+                    paymentCategory: row.paymentCategory || null,
+                    entryType: row.entryType || null,
                 };
             });
 

@@ -88,11 +88,13 @@ class PaymentInController {
 
     async getWatavReport(req, res) {
         try {
-            const { startDate, endDate, watavCustomerId } = req.query;
+            const { startDate, endDate, watavCustomerId, collectionStatus, entryType } = req.query;
             const report = await paymentInService.getWatavReport({
                 startDate,
                 endDate,
                 watavCustomerId: watavCustomerId || undefined,
+                collectionStatus: collectionStatus || undefined,
+                entryType: entryType || undefined,
             });
             return res.json({
                 success: true,
@@ -102,6 +104,38 @@ class PaymentInController {
             });
         } catch (error) {
             console.error('Get watav report error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async collectWatavEntries(req, res) {
+        try {
+            const result = await paymentInService.collectWatavEntries(req.body);
+            return res.json({
+                success: true,
+                data: result,
+            });
+        } catch (error) {
+            console.error('Collect watav entries error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async uncollectWatavEntries(req, res) {
+        try {
+            const result = await paymentInService.uncollectWatavEntries(req.body);
+            return res.json({
+                success: true,
+                data: result,
+            });
+        } catch (error) {
+            console.error('Uncollect watav entries error:', error);
             return res.status(400).json({
                 success: false,
                 error: error.message
