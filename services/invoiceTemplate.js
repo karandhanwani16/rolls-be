@@ -7,9 +7,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
         sumQuantityByUnit,
     } = require('../utils/quantityUnits');
 
-    // ~18 roll lines fit comfortably under header+details on an A4 page
-    const ROLLS_PER_PAGE = 18;
-
     // Group items by name, width, unit, and (for bills) price
     const grouped = {};
     invoiceData.items.forEach((item) => {
@@ -63,10 +60,16 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const roundedTotal = Math.round(actualTotal);
     const roundOff = (roundedTotal - actualTotal).toFixed(2);
     const heading = isChallan ? 'ON APPROVAL / DELIVERY CHALLAN' : 'SALES BILL';
+    const colCount = isChallan ? 6 : 8;
 
-    const headerRow = isChallan
+    // Wider Qty column so "58.00 m" stays on one line
+    const colgroup = isChallan
+        ? `<col style="width:7%"><col style="width:24%"><col style="width:10%"><col style="width:14%"><col style="width:14%"><col style="width:31%">`
+        : `<col style="width:5%"><col style="width:18%"><col style="width:8%"><col style="width:12%"><col style="width:10%"><col style="width:18%"><col style="width:12%"><col style="width:17%">`;
+
+    const columnHeaderRow = isChallan
         ? `
-          <tr id="heading">
+          <tr class="col-heading">
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Rolls</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Sort No.</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Width</th>
@@ -75,7 +78,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th style="border-bottom:1px solid #000;">Qty</th>
           </tr>`
         : `
-          <tr id="heading">
+          <tr class="col-heading">
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Rolls</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Sort No.</th>
             <th style="border-right:1px solid #000;border-bottom:1px solid #000;">Width</th>
@@ -86,112 +89,73 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th style="border-bottom:1px solid #000;">Amount</th>
           </tr>`;
 
-    const colgroup = isChallan
-        ? `<col style="width:9%"><col style="width:26%"><col style="width:11%"><col style="width:16%"><col style="width:16%"><col style="width:22%">`
-        : `<col style="width:7%"><col style="width:20%"><col style="width:9%"><col style="width:13%"><col style="width:12%"><col style="width:11%"><col style="width:11%"><col style="width:17%">`;
+    // Repeated on every printed page via thead
+    const repeatingHeader = `
+      <tr class="repeat-header">
+        <td colspan="${colCount}" style="padding:0;border:none;">
+          <div class="header">
+            <div class="sub-header">${heading}</div>
+            <div class="company-name">MOHIT TRADERS</div>
+            <div>ULHASNAGAR 421005</div>
+          </div>
+          <div class="details-row">
+            <div class="details-col">
+              <div><strong>To,</strong></div>
+              <div><strong>${invoiceData.customer}</strong></div>
+              <div>Maker : ${invoiceData.maker || '-'}</div>
+            </div>
+            <div class="details-col right">
+              <div>Bill No.: ${invoiceData.sales_no || '-'}</div>
+              <div>Date: ${invoiceData.date || ''}</div>
+              <div>Hamal: ${invoiceData.hamaal || '-'}</div>
+              <div>Challan No.: ${invoiceData.challan_no || ''}</div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      ${columnHeaderRow}`;
 
-    const fillCols = isChallan
-        ? `<div class="fill-col" style="width:9%"></div><div class="fill-col" style="width:26%"></div><div class="fill-col" style="width:11%"></div><div class="fill-col" style="width:16%"></div><div class="fill-col" style="width:16%"></div><div class="fill-col" style="width:22%"></div>`
-        : `<div class="fill-col" style="width:7%"></div><div class="fill-col" style="width:20%"></div><div class="fill-col" style="width:9%"></div><div class="fill-col" style="width:13%"></div><div class="fill-col" style="width:12%"></div><div class="fill-col" style="width:11%"></div><div class="fill-col" style="width:11%"></div><div class="fill-col" style="width:17%"></div>`;
+    const qtyLine = (value, unit) =>
+        `<div class="qty-line">${Number(value).toFixed(2)}&nbsp;${unitAbbr(unit)}</div>`;
 
-    // Split each product group into roll chunks, then pack chunks into pages
-    const chunks = [];
-    groupedItems.forEach((group) => {
-        const totalRolls = group.roll_nos.length || 1;
-        for (let i = 0; i < totalRolls; i += ROLLS_PER_PAGE) {
-            const end = Math.min(i + ROLLS_PER_PAGE, totalRolls);
-            chunks.push({
-                name: group.name,
-                width: group.width,
-                unit: group.unit,
-                price: group.price,
-                total_mts: group.total_mts,
-                total_amount: group.total_amount,
-                full_roll_count: group.roll_nos.length,
-                roll_nos: group.roll_nos.slice(i, end),
-                shades: (group.shades || []).slice(i, end),
-                meters: group.meters.slice(i, end),
-                isContinuation: i > 0,
-                showGroupTotal: end === totalRolls,
-            });
-        }
-    });
+    const itemRows = groupedItems
+        .map((group) => {
+            const rollNosHtml = group.roll_nos
+                .map((roll) => `<div>${roll || '&nbsp;'}</div>`)
+                .join('');
+            const shadesHtml = (group.shades || [])
+                .map((shade) => `<div>${shade || '&nbsp;'}</div>`)
+                .join('');
+            const metersHtml = group.meters
+                .map((m) => qtyLine(m, group.unit))
+                .join('');
+            const metersCell = `${metersHtml}<div class="qty-rule">________</div><div class="qty-total">${qtyLine(group.total_mts, group.unit)}</div>`;
 
-    const pages = [];
-    let currentPage = [];
-    let currentRolls = 0;
-    chunks.forEach((chunk) => {
-        const chunkRolls = chunk.roll_nos.length || 1;
-        if (currentPage.length > 0 && currentRolls + chunkRolls > ROLLS_PER_PAGE) {
-            pages.push(currentPage);
-            currentPage = [];
-            currentRolls = 0;
-        }
-        currentPage.push(chunk);
-        currentRolls += chunkRolls;
-    });
-    if (currentPage.length > 0) {
-        pages.push(currentPage);
-    }
-    if (pages.length === 0) {
-        pages.push([]);
-    }
-
-    const renderItemRows = (pageChunks) =>
-        pageChunks
-            .map((group) => {
-                const rollNosHtml = group.roll_nos
-                    .map((roll) => `<div>${roll || '&nbsp;'}</div>`)
-                    .join('');
-                const shadesHtml = (group.shades || [])
-                    .map((shade) => `<div>${shade || '&nbsp;'}</div>`)
-                    .join('');
-                const metersHtml = group.meters
-                    .map((m) => `<div>${m.toFixed(2)} ${unitAbbr(group.unit)}</div>`)
-                    .join('');
-                const metersCell = group.showGroupTotal
-                    ? `${metersHtml}<div style="font-size:18px;line-height:10px;padding-bottom:10px;">________</div><div style="font-weight:bold;">${group.total_mts.toFixed(2)} ${unitAbbr(group.unit)}</div>`
-                    : `${metersHtml}<div style="font-size:12px;padding-top:4px;font-weight:normal;">(cont.)</div>`;
-
-                const sortLabel = group.isContinuation
-                    ? `${group.name || ''} (cont.)`
-                    : group.name || '';
-                const rollsLabel = group.isContinuation
-                    ? group.roll_nos.length
-                    : group.full_roll_count;
-
-                if (isChallan) {
-                    return `
-          <tr>
-            <td style="border-right:1px solid #000; vertical-align:top;">${rollsLabel}</td>
-            <td style="border-right:1px solid #000; vertical-align:top;">${sortLabel}</td>
-            <td style="border-right:1px solid #000; vertical-align:top;">${group.isContinuation ? '' : group.width || ''}</td>
-            <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${rollNosHtml}</td>
-            <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${shadesHtml}</td>
-            <td style="white-space:pre-line; vertical-align:top;">${metersCell}</td>
-          </tr>`;
-                }
-
-                const rateCell = group.showGroupTotal
-                    ? `<div style="font-size:18px;line-height:10px;padding-bottom:10px;">______</div>${group.price || ''}`
-                    : '';
-                const amountCell = group.showGroupTotal
-                    ? `<div style="font-size:18px;line-height:10px;padding-bottom:10px;">_______</div>${formatCurrency(group.total_amount) || ''}`
-                    : '';
-
+            if (isChallan) {
                 return `
-          <tr>
-            <td style="border-right:1px solid #000; vertical-align:top;">${rollsLabel}</td>
-            <td style="border-right:1px solid #000; vertical-align:top;">${sortLabel}</td>
-            <td style="border-right:1px solid #000; vertical-align:top;">${group.isContinuation ? '' : group.width || ''}</td>
+          <tr class="item-row">
+            <td style="border-right:1px solid #000; vertical-align:top;">${group.roll_nos.length}</td>
+            <td style="border-right:1px solid #000; vertical-align:top;">${group.name || ''}</td>
+            <td style="border-right:1px solid #000; vertical-align:top;">${group.width || ''}</td>
             <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${rollNosHtml}</td>
             <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${shadesHtml}</td>
-            <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${metersCell}</td>
-            <td style="border-right:1px solid #000; vertical-align:bottom;">${rateCell}</td>
-            <td style="text-align: right; vertical-align:bottom;">${amountCell}</td>
+            <td class="qty-cell" style="white-space:pre-line; vertical-align:top;">${metersCell}</td>
           </tr>`;
-            })
-            .join('');
+            }
+
+            return `
+          <tr class="item-row">
+            <td style="border-right:1px solid #000; vertical-align:top;">${group.roll_nos.length}</td>
+            <td style="border-right:1px solid #000; vertical-align:top;">${group.name || ''}</td>
+            <td style="border-right:1px solid #000; vertical-align:top;">${group.width || ''}</td>
+            <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${rollNosHtml}</td>
+            <td style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${shadesHtml}</td>
+            <td class="qty-cell" style="border-right:1px solid #000; white-space:pre-line; vertical-align:top;">${metersCell}</td>
+            <td style="border-right:1px solid #000; vertical-align:bottom;"><div class="qty-rule">______</div>${group.price || ''}</td>
+            <td style="text-align: right; vertical-align:bottom;"><div class="qty-rule">_______</div>${formatCurrency(group.total_amount) || ''}</td>
+          </tr>`;
+        })
+        .join('');
 
     const footerRows = isChallan
         ? `
@@ -227,216 +191,140 @@ module.exports = (invoiceData, documentType = 'bill') => {
           <td style="text-align: right">${formatCurrency(roundedTotal)}</td>
         </tr>`;
 
-    const continuedFooter = isChallan
-        ? `
-        <tr style="border-top:1px solid #000;">
-          <td colspan="6" style="font-weight: bold;text-align: center;padding: 10px;">Continued on next page...</td>
-        </tr>`
-        : `
-        <tr style="border-top:1px solid #000;">
-          <td colspan="8" style="font-weight: bold;text-align: center;padding: 10px;">Continued on next page...</td>
-        </tr>`;
-
-    const pageHtml = pages
-        .map((pageChunks, pageIndex) => {
-            const isLastPage = pageIndex === pages.length - 1;
-            const pageNo = pageIndex + 1;
-            const pageCount = pages.length;
-
-            return `
-      <div class="page">
-      <div class="header">
-        <div class="sub-header">${heading}</div>
-        <div class="company-name">MOHIT TRADERS</div>
-        <div>ULHASNAGAR 421005</div>
-        ${
-            pageCount > 1
-                ? `<div class="page-no">Page ${pageNo} of ${pageCount}</div>`
-                : ''
-        }
-      </div>
-      <div class="details-row">
-        <div class="details-col">
-          <div><strong>To,</strong></div>
-          <div><strong>${invoiceData.customer}</strong></div>
-          <div>Maker : ${invoiceData.maker || '-'}</div>
-        </div>
-        <div class="details-col right">
-        <div>Bill No.: ${invoiceData.sales_no || '-'}</div>
-        <div>Date: ${invoiceData.date || ''}</div>
-        <div>Hamal: ${invoiceData.hamaal || '-'}</div>
-        <div>Challan No.: ${invoiceData.challan_no || ''}</div>
-        </div>
-      </div>
-      <div class="table-wrap">
-      <table class="items-table">
-        <colgroup>${colgroup}</colgroup>
-        <thead>
-          ${headerRow}
-        </thead>
-        <tbody>
-        ${renderItemRows(pageChunks)}
-        </tbody>
-      </table>
-      <div class="table-fill">${fillCols}</div>
-      <table class="footer-table">
-        <colgroup>${colgroup}</colgroup>
-        <tbody>
-        ${isLastPage ? footerRows : continuedFooter}
-        </tbody>
-      </table>
-      </div>
-      ${
-          isLastPage && isChallan
-              ? `
-      <div class="challan-note">
-        कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
-        रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
-      </div>`
-              : ''
-      }
-      </div>`;
-        })
-        .join('');
-
     return `
     <html>
     <head>
       <style>
-        @page { size: A4; margin: 0; }
+        @page { size: A4; margin: 8mm; }
         html, body {
           margin: 0;
           padding: 0;
-          width: 210mm;
           background: #fff;
           font-family: Arial, sans-serif;
           color: #333;
         }
-        .page {
-          width: 210mm;
-          height: 297mm;
-          box-sizing: border-box;
-          padding: 8mm;
-          display: flex;
-          flex-direction: column;
-          background: #fff;
-          page-break-after: always;
-          break-after: page;
-        }
-        .page:last-child {
-          page-break-after: auto;
-          break-after: auto;
+        .sheet {
+          width: 100%;
         }
         .header {
           border: 1px solid #000;
           text-align: center;
-          padding: 10px;
-          flex-shrink: 0;
-          position: relative;
-        }
-        .page-no {
-          position: absolute;
-          right: 10px;
-          top: 8px;
-          font-size: 12px;
-          font-weight: 700;
+          padding: 8px 10px;
         }
         .company-name {
-          font-size: 24px;
+          font-size: 22px;
           font-weight: bold;
           color: #2c3e50;
         }
         .sub-header {
           text-align: center;
-          font-size: 14px;
-          font-weight:700;
+          font-size: 13px;
+          font-weight: 700;
         }
         .details-row {
           border: 1px solid #000;
           border-top: none;
           display: flex;
           justify-content: space-between;
-          flex-shrink: 0;
         }
         .details-col {
           flex: 1;
-          font-size: 18px;
+          font-size: 16px;
           font-weight: 700;
-          padding-left: 10px;
+          padding: 6px 10px;
         }
         .details-col.right {
           text-align: left;
-          padding-right: 10px;
-          padding-bottom: 10px;
           border-left: 1px solid #000;
-          font-size: 18px !important;
-          font-weight: 700 !important;
         }
-        .table-wrap {
-          flex: 1 1 0;
-          height: 0;
-          min-height: 0;
-          display: flex;
-          flex-direction: column;
-          border: 1px solid #000;
-          border-top: none;
-        }
-        table {
+        table.items-table {
           width: 100%;
           border-collapse: collapse;
           table-layout: fixed;
-        }
-        th,
-        td {
-          padding: 8px;
-          text-align: left;
-          font-size: 15px;
-        }
-        th {
-          padding: 4px !important;
-          padding-bottom: 10px !important;
-          font-weight: black;
+          border: 1px solid #000;
           border-top: none;
         }
-        .table-fill {
-          flex: 1 1 auto;
-          min-height: 8px;
-          display: flex;
-          width: 100%;
+        thead {
+          display: table-header-group;
         }
-        .fill-col {
-          box-sizing: border-box;
-          height: 100%;
-          border-right: 1px solid #000;
+        tfoot {
+          display: table-footer-group;
         }
-        .fill-col:last-child {
-          border-right: none;
+        tr.item-row {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
-        .footer-table td {
-          vertical-align: middle;
+        th, td {
+          padding: 6px;
+          text-align: left;
+          font-size: 15px;
+          font-weight: 700;
+          vertical-align: top;
+        }
+        .col-heading th {
+          font-size: 16px;
+          padding: 6px 4px 8px !important;
+        }
+        .qty-cell {
+          white-space: nowrap;
+        }
+        .qty-line {
+          white-space: nowrap;
+          font-size: 16px;
+          line-height: 1.25;
+        }
+        .qty-total .qty-line {
+          font-weight: 700;
+        }
+        .qty-rule {
+          font-size: 16px;
+          line-height: 10px;
+          padding-bottom: 8px;
         }
         .challan-note {
-          flex-shrink: 0;
           margin-top: 6px;
           border: 1px solid #000;
           padding: 8px 10px;
           font-size: 14px;
           font-weight: 700;
           line-height: 1.45;
-          text-align: left;
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
-        #heading th{
-          font-size: 18px;
-          font-weight: 700;
-        }
-        tbody tr td, tfoot tr td{
-          font-size: 21px;
-          font-weight: 700;
+        .footer-block {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
       </style>
     </head>
     <body>
-      ${pageHtml}
+      <div class="sheet">
+        <table class="items-table">
+          <colgroup>${colgroup}</colgroup>
+          <thead>
+            ${repeatingHeader}
+          </thead>
+          <tbody>
+            ${itemRows || `<tr><td colspan="${colCount}" style="padding:20px;text-align:center;">No items</td></tr>`}
+          </tbody>
+        </table>
+        <div class="footer-block">
+          <table class="items-table" style="border-top:none;">
+            <colgroup>${colgroup}</colgroup>
+            <tbody>
+              ${footerRows}
+            </tbody>
+          </table>
+          ${
+              isChallan
+                  ? `<div class="challan-note">
+            कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
+            रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
+          </div>`
+                  : ''
+          }
+        </div>
+      </div>
     </body>
   </html>`;
 };
