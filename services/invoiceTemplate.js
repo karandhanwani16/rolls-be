@@ -253,7 +253,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
           ${columnHeaderRow}
         </thead>
         <tbody>
-          ${renderItemRows(lines, { fillPage: !isLastPage })}
+          ${renderItemRows(lines, { fillPage: true })}
         </tbody>
       </table>
     </div>
@@ -289,7 +289,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
   <style>
     @page {
       size: A4;
-      margin: 8mm;
+      margin: 2mm;
     }
     * { box-sizing: border-box; }
     html, body {
@@ -300,9 +300,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-family: Arial, Helvetica, sans-serif;
     }
     .page {
-      /* Fill full printable A4 height so continuation pages close at the bottom */
-      width: 194mm;
-      height: 281mm;
+      /* Near-full A4 so frame reaches the bottom even with small print margins */
+      width: 206mm;
+      height: 293mm;
       margin: 0 auto 12px;
       background: #fff;
       display: flex;
@@ -355,18 +355,19 @@ module.exports = (invoiceData, documentType = 'bill') => {
     .details-col.right {
       border-left: 1px solid #000;
     }
-    /* Shell grows to page bottom and draws the closing border */
+    /* Shell grows so column lines + frame reach the totals / page bottom */
     .table-shell {
       flex: 1 1 auto;
       min-height: 0;
       border: 1px solid #000;
       border-top: none;
+      border-bottom: none;
       display: flex;
       flex-direction: column;
     }
-    .page-last .table-shell {
-      flex: 0 1 auto;
-      border-bottom: none;
+    /* Continuation pages (no footer): close the frame at the page bottom */
+    .page-continue .table-shell {
+      border-bottom: 1px solid #000;
     }
     table.items-table {
       width: 100%;
@@ -375,18 +376,32 @@ module.exports = (invoiceData, documentType = 'bill') => {
       table-layout: fixed;
       border: none;
     }
-    .page-last .items-table {
-      height: auto;
-    }
     tr.filler-row td {
       height: 100%;
       border-bottom: none;
       vertical-align: top;
     }
     table.footer-table {
+      width: 100%;
+      border: 1px solid #000;
+      border-top: 1px solid #000;
+      flex: 0 0 auto;
+      height: auto;
+    }
+    .footer-block {
+      flex-shrink: 0;
+      margin-top: auto;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .challan-note {
+      margin-top: 0;
       border: 1px solid #000;
       border-top: none;
-      flex: 0 0 auto;
+      padding: 8px 10px;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.45;
     }
     th, td {
       padding: 4px 8px;
@@ -424,19 +439,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
       vertical-align: middle;
       font-size: 18px;
     }
-    .footer-block {
-      flex-shrink: 0;
-      page-break-inside: avoid;
-      break-inside: avoid;
-    }
-    .challan-note {
-      margin-top: 6px;
-      border: 1px solid #000;
-      padding: 8px 10px;
-      font-size: 14px;
-      font-weight: 700;
-      line-height: 1.45;
-    }
     @media print {
       html, body {
         width: auto !important;
@@ -444,7 +446,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       }
       .page {
         width: 100% !important;
-        height: 281mm;
+        height: 293mm;
         margin: 0;
         page-break-after: always;
         break-after: page;
