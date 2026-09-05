@@ -1,5 +1,6 @@
 const prisma = require('../prisma/client');
 const { format } = require('date-fns');
+const { getDueDate, getOverdueDays } = require('../utils/creditDays');
 
 class BillToBillPaymentService {
     async getCustomerBillPayments(customerId) {
@@ -78,8 +79,15 @@ class BillToBillPaymentService {
                     sales_no: sale.sales_no,
                     date: sale.date,
                     total: sale.total,
+                    credit_days: sale.credit_days || 0,
                     cleared_amount: clearedAmount,
                     remaining_amount: sale.total - clearedAmount,
+                    due_date: getDueDate(sale.date, sale.credit_days || 0),
+                    overdue_days: getOverdueDays(
+                        sale.date,
+                        sale.credit_days || 0,
+                        sale.total - clearedAmount
+                    ),
                     status
                 };
             });

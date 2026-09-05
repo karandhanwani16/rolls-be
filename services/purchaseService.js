@@ -39,8 +39,10 @@ class PurchaseService {
         return await prisma.$transaction(async(prisma) => {
             // Create the purchase record
             const transportCharges = parseFloat(purchaseDetails.transport_charges) || 0;
+            const discount = parseFloat(purchaseDetails.discount) || 0;
+            const billUnit = normalizeUnit(purchaseDetails.unit);
             const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
-            const total = parseFloat((itemsTotal + transportCharges).toFixed(2));
+            const total = parseFloat((itemsTotal + transportCharges - discount).toFixed(2));
 
             const purchase = await prisma.purchase.create({
                 data: {
@@ -53,6 +55,8 @@ class PurchaseService {
                     godown: purchaseDetails.godown_no,
                     transport: purchaseDetails.transport,
                     transport_charges: transportCharges,
+                    discount,
+                    unit: billUnit,
                     received_by: purchaseDetails.received_by,
                     created_at: new Date(),
                     updated_at: new Date()
@@ -66,8 +70,9 @@ class PurchaseService {
                     product_id: item.product_id,
                     product_name: item.product_name,
                     roll_no: item.roll_no,
+                    shade: item.shade || null,
                     meters: item.meters,
-                    unit: normalizeUnit(item.unit),
+                    unit: billUnit,
                     price: item.price,
                     total: item.total_price,
                     status: PurchaseItemStatus.UNSOLD,
@@ -103,8 +108,10 @@ class PurchaseService {
         return await prisma.$transaction(async(prisma) => {
             // Update the purchase record
             const transportCharges = parseFloat(purchaseDetails.transport_charges) || 0;
+            const discount = parseFloat(purchaseDetails.discount) || 0;
+            const billUnit = normalizeUnit(purchaseDetails.unit);
             const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
-            const total = parseFloat((itemsTotal + transportCharges).toFixed(2));
+            const total = parseFloat((itemsTotal + transportCharges - discount).toFixed(2));
 
             const purchase = await prisma.purchase.update({
                 where: { id },
@@ -118,6 +125,8 @@ class PurchaseService {
                     godown: purchaseDetails.godown,
                     transport: purchaseDetails.transport,
                     transport_charges: transportCharges,
+                    discount,
+                    unit: billUnit,
                     received_by: purchaseDetails.received_by,
                     updated_at: new Date()
                 }
@@ -135,8 +144,9 @@ class PurchaseService {
                     product_id: item.product_id,
                     product_name: item.product_name,
                     roll_no: item.roll_no,
+                    shade: item.shade || null,
                     meters: item.meters,
-                    unit: normalizeUnit(item.unit),
+                    unit: billUnit,
                     price: item.price,
                     total: item.total_price,
                     status: PurchaseItemStatus.UNSOLD,

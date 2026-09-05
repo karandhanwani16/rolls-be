@@ -53,7 +53,8 @@ module.exports = (invoiceData, documentType = 'bill') => {
 
         const itemsTotal = invoiceData.items.reduce((sum, item) => sum + (item.amount || 0), 0) || 0;
         const transportCharges = parseFloat(invoiceData.transport_charges) || 0;
-        const actualTotal = itemsTotal + transportCharges;
+        const discount = parseFloat(invoiceData.discount) || 0;
+        const actualTotal = itemsTotal + transportCharges - discount;
         const roundedTotal = Math.round(actualTotal);
         const roundOff = (roundedTotal - actualTotal).toFixed(2);
         const heading = isChallan ? 'ON APPROVAL / DELIVERY CHALLAN' : 'SALES BILL';
@@ -140,9 +141,13 @@ module.exports = (invoiceData, documentType = 'bill') => {
           <td style="text-align: right;border-bottom:1px solid #000;">${formatCurrency(itemsTotal || 0)}</td>
         </tr>
         <tr>
-          <td colspan="5" rowspan="4" style="border-right:1px solid #000;font-weight: bold;text-align: right;">${convertNumberToWords(roundedTotal) || ""}</td>
+          <td colspan="5" rowspan="5" style="border-right:1px solid #000;font-weight: bold;text-align: right;">${convertNumberToWords(roundedTotal) || ""}</td>
           <td colspan="2" style="font-weight: bold;border-right:1px solid #000;border-bottom:1px solid #000;">Transport Charges</td>
           <td style="text-align: right;border-bottom:1px solid #000;">${formatCurrency(transportCharges)}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="font-weight: bold;border-right:1px solid #000;border-bottom:1px solid #000;">Discount</td>
+          <td style="text-align: right;border-bottom:1px solid #000;">${formatCurrency(discount)}</td>
         </tr>
         <tr>
           <td colspan="2" style="font-weight: bold;border-right:1px solid #000;border-bottom:1px solid #000;">Round Off</td>
@@ -277,6 +282,16 @@ module.exports = (invoiceData, documentType = 'bill') => {
           font-weight: bold;
           text-align: right;
         }
+        .challan-note {
+          flex-shrink: 0;
+          margin-top: 6px;
+          border: 1px solid #000;
+          padding: 8px 10px;
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 1.45;
+          text-align: left;
+        }
           #heading th{
             font-size: 18px;
             font-weight: 700;
@@ -326,6 +341,11 @@ module.exports = (invoiceData, documentType = 'bill') => {
         </tbody>
       </table>
       </div>
+      ${isChallan ? `
+      <div class="challan-note">
+        कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
+        रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
+      </div>` : ''}
       </div>
     </body>
   </html>`;

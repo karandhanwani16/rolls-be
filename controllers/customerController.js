@@ -28,6 +28,7 @@ class CustomerController {
                 customer_type,
                 opening_balance,
                 opening_balance_date,
+                credit_days,
             } = req.body;
 
             if (opening_balance && Number(opening_balance) !== 0 && !opening_balance_date) {
@@ -46,6 +47,7 @@ class CustomerController {
                 type: customer_type,
                 opening_balance: opening_balance ? Number(opening_balance) : 0,
                 opening_balance_date: opening_balance_date ? new Date(opening_balance_date + 'T00:00:00.000Z') : null,
+                credit_days: credit_days !== undefined && credit_days !== null ? parseInt(credit_days, 10) || 0 : 0,
             });
             res.status(201).json({
                 status: 'success',
@@ -71,6 +73,7 @@ class CustomerController {
                 customer_type,
                 opening_balance,
                 opening_balance_date,
+                credit_days,
             } = req.body;
 
             if (opening_balance !== undefined && Number(opening_balance) !== 0 && !opening_balance_date) {
@@ -90,6 +93,9 @@ class CustomerController {
                 opening_balance: opening_balance !== undefined ? Number(opening_balance) : undefined,
                 opening_balance_date: opening_balance_date !== undefined
                     ? (opening_balance_date ? new Date(opening_balance_date + 'T00:00:00.000Z') : null)
+                    : undefined,
+                credit_days: credit_days !== undefined && credit_days !== null
+                    ? parseInt(credit_days, 10) || 0
                     : undefined,
             });
             res.json({

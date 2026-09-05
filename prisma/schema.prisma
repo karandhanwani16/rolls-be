@@ -41,6 +41,7 @@ model Customer {
   type                  String?             @map("customer_type")
   opening_balance       Float               @default(0) @map("customer_opening_balance")
   opening_balance_date  DateTime?           @map("customer_opening_balance_date")
+  credit_days           Int                 @default(0) @map("customer_credit_days")
   created_at            DateTime            @default(now())
   updated_at            DateTime            @default(now()) @updatedAt
   sales                 Sale[]
@@ -131,6 +132,8 @@ model Purchase {
   godown        String?        @map("purchase_godown")
   transport           String?        @map("purchase_transport")
   transport_charges   Float?         @default(0) @map("purchase_transport_charges")
+  discount            Float?         @default(0) @map("purchase_discount")
+  unit                String         @default("m") @map("purchase_unit")
   received_by         String?        @map("purchase_received_by")
   created_at    DateTime       @default(now())
   updated_at    DateTime       @default(now()) @updatedAt
@@ -153,6 +156,7 @@ model PurchaseItem {
   product_id   String?            @map("product_id")
   product_name String             @map("product_name")
   roll_no      String?            @map("purchase_items_roll_no")
+  shade        String?            @map("purchase_items_shade")
   meters       Float              @map("purchase_items_meters")
   unit         String             @default("m") @map("purchase_items_unit")
   price        Float              @map("purchase_items_price")
@@ -180,6 +184,9 @@ model Sale {
   maker              String?                   @map("sales_maker")
   sales_by           String?                   @map("sales_by")
   transport_charges  Float?                    @default(0) @map("sales_transport_charges")
+  discount           Float?                    @default(0) @map("sales_discount")
+  credit_days        Int                       @default(0) @map("sales_credit_days")
+  unit               String                    @default("m") @map("sales_unit")
   created_at    DateTime                  @default(now())
   updated_at    DateTime                  @default(now()) @updatedAt
   items         SaleItem[]

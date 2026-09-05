@@ -42,7 +42,13 @@ const SKIPPABLE_ERROR_PATTERNS = [
   /already exists/i,
   /duplicate key name/i,
   /can't drop/i,
+  /check that column\/key exists/i,
   /duplicate foreign key constraint name/i,
+  /key column .* doesn't exist/i,
+  /unknown column/i,
+  /cannot add foreign key constraint/i,
+  /failed to open the referenced table/i,
+  /errno: 150/i,
 ];
 
 function promptPassword(prompt) {

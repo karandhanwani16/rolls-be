@@ -5,20 +5,46 @@ const puppeteer = require('puppeteer');
 const invoiceTemplate = require('./invoiceTemplate');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');
+const { getDueDate, getOverdueDays } = require('../utils/creditDays');
 
 
 class SaleService {
+    enrichSaleWithPaymentStatus(sale) {
+        const clearedAmount = (sale.bill_payments || []).reduce(
+            (total, payment) => total + (payment.cleared_amount || 0),
+            0
+        );
+        const remainingAmount = Math.max(0, (sale.total || 0) - clearedAmount);
+        let payment_status = 'UNPAID';
+        if (clearedAmount >= sale.total) {
+            payment_status = 'FULL';
+        } else if (clearedAmount > 0) {
+            payment_status = 'PARTIAL';
+        }
+
+        return {
+            ...sale,
+            cleared_amount: clearedAmount,
+            remaining_amount: remainingAmount,
+            payment_status,
+            due_date: getDueDate(sale.date, sale.credit_days || 0),
+            overdue_days: getOverdueDays(sale.date, sale.credit_days || 0, remainingAmount),
+        };
+    }
+
     async getAllSales(customerId) {
-        return await prisma.sale.findMany({
+        const sales = await prisma.sale.findMany({
             where: customerId ? { customer_id: customerId } : undefined,
             include: {
                 customer: true,
-                items: true
+                items: true,
+                bill_payments: true,
             },
             orderBy: {
                 created_at: 'desc'
             }
         });
+        return sales.map((sale) => this.enrichSaleWithPaymentStatus(sale));
     }
 
     async getSaleById(id) {
@@ -27,7 +53,8 @@ class SaleService {
             include: {
                 customer: true,
                 items: true,
-                godown: true
+                godown: true,
+                bill_payments: true,
             }
         });
 
@@ -35,7 +62,7 @@ class SaleService {
             throw new Error('Sale not found');
         }
 
-        return sale;
+        return this.enrichSaleWithPaymentStatus(sale);
     }
 
     async getNextSalesNumber(date) {
@@ -75,8 +102,10 @@ class SaleService {
             }
 
             const transportCharges = parseFloat(saleDetails.transport_charges) || 0;
+            const discount = parseFloat(saleDetails.discount) || 0;
+            const billUnit = normalizeUnit(saleDetails.unit);
             const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
-            const total = Math.round(itemsTotal + transportCharges);
+            const total = Math.round(itemsTotal + transportCharges - discount);
 
             // Create the sale record
             const sale = await prisma.sale.create({
@@ -93,6 +122,9 @@ class SaleService {
                     challan_no: saleDetails.challan_no,
                     sales_by: saleDetails.sales_by,
                     transport_charges: transportCharges,
+                    discount,
+                    credit_days: parseInt(saleDetails.credit_days, 10) || 0,
+                    unit: billUnit,
                     created_at: new Date(),
                     updated_at: new Date()
                 }
@@ -125,7 +157,7 @@ class SaleService {
                     roll_no: item.roll_no,
                     shade: item.shade || null,
                     meters: item.meters,
-                    unit: normalizeUnit(item.unit),
+                    unit: billUnit,
                     price: item.price,
                     total: item.total_price,
                     created_at: new Date(),
@@ -158,9 +190,11 @@ class SaleService {
         const { items, ...saleDetails } = saleData;
 
         const transportCharges = parseFloat(saleDetails.transport_charges) || 0;
+        const discount = parseFloat(saleDetails.discount) || 0;
+        const billUnit = normalizeUnit(saleDetails.unit);
         const actualTotal = (items || []).reduce((sum, item) => {
             return sum + (item.total_price || 0)
-        }, 0) + transportCharges
+        }, 0) + transportCharges - discount
         const roundedTotal = Math.round(actualTotal);
 
 
@@ -207,6 +241,9 @@ class SaleService {
                     challan_no: saleDetails.challan_no,
                     sales_by: saleDetails.sales_by,
                     transport_charges: transportCharges,
+                    discount,
+                    credit_days: parseInt(saleDetails.credit_days, 10) || 0,
+                    unit: billUnit,
                     updated_at: new Date()
                 }
             });
@@ -244,7 +281,7 @@ class SaleService {
                     roll_no: item.roll_no,
                     shade: item.shade || null,
                     meters: item.meters,
-                    unit: normalizeUnit(item.unit),
+                    unit: billUnit,
                     price: item.price,
                     total: item.total_price,
                     created_at: new Date(),
@@ -378,11 +415,12 @@ class SaleService {
                     roll_no: item.roll_no,
                     shade: item.shade || '',
                     mts: item.meters,
-                    unit: item.unit || 'm',
+                    unit: sale.unit || item.unit || 'm',
                     amount: item.total,
                 })),
                 total: sale.total,
                 transport_charges: sale.transport_charges || 0,
+                discount: sale.discount || 0,
                 sales_no: sale.sales_no,
                 challan_no: sale.challan_no,
                 godown: sale.godown?.name || '',

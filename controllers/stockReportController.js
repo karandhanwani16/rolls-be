@@ -41,6 +41,7 @@ const getStockData = async(req, res) => {
             srNo: index + 1,
             product_name: item.product_name,
             roll_no: item.roll_no,
+            shade: item.shade || '',
             meters: item.meters,
             unit: item.unit || 'm',
             price: item.price,
