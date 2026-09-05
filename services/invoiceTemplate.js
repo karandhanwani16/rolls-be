@@ -61,10 +61,10 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const heading = isChallan ? 'ON APPROVAL / DELIVERY CHALLAN' : 'SALES BILL';
     const colCount = isChallan ? 6 : 8;
 
-    // Wider Qty so "58.00 m" does not wrap
+    // Wider Qty so "58.00 m" stays on one line at full font size
     const colgroup = isChallan
-        ? `<col style="width:7%"><col style="width:24%"><col style="width:10%"><col style="width:14%"><col style="width:14%"><col style="width:31%">`
-        : `<col style="width:5%"><col style="width:18%"><col style="width:8%"><col style="width:12%"><col style="width:10%"><col style="width:18%"><col style="width:12%"><col style="width:17%">`;
+        ? `<col style="width:8%"><col style="width:22%"><col style="width:10%"><col style="width:15%"><col style="width:15%"><col style="width:30%">`
+        : `<col style="width:6%"><col style="width:17%"><col style="width:8%"><col style="width:12%"><col style="width:11%"><col style="width:17%"><col style="width:12%"><col style="width:17%">`;
 
     const columnHeaderRow = isChallan
         ? `
@@ -88,45 +88,65 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th class="no-right-border">Amount</th>
           </tr>`;
 
-    const qtyLine = (value, unit) =>
-        `<div class="qty-line">${Number(value).toFixed(2)}&nbsp;${unitAbbr(unit)}</div>`;
-
+    // One row per roll so Chrome does not shrink a huge unbreakable group to fit one page
     const itemRows = groupedItems
         .map((group) => {
-            const rollNosHtml = group.roll_nos
-                .map((roll) => `<div>${roll || '&nbsp;'}</div>`)
-                .join('');
-            const shadesHtml = (group.shades || [])
-                .map((shade) => `<div>${shade || '&nbsp;'}</div>`)
-                .join('');
-            const metersHtml = group.meters
-                .map((m) => qtyLine(m, group.unit))
-                .join('');
-            const metersCell = `${metersHtml}<div class="qty-rule">________</div><div class="qty-total">${qtyLine(group.total_mts, group.unit)}</div>`;
+            const count = Math.max(group.roll_nos.length, 1);
+            return group.roll_nos
+                .map((rollNo, idx) => {
+                    const isFirst = idx === 0;
+                    const isLast = idx === count - 1;
+                    const shade = (group.shades || [])[idx] || '';
+                    const meters = group.meters[idx] || 0;
+                    const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`;
 
-            if (isChallan) {
-                return `
-          <tr class="item-row">
-            <td>${group.roll_nos.length}</td>
-            <td>${group.name || ''}</td>
-            <td>${group.width || ''}</td>
-            <td class="stack-cell">${rollNosHtml}</td>
-            <td class="stack-cell">${shadesHtml}</td>
-            <td class="qty-cell no-right-border">${metersCell}</td>
+                    if (isChallan) {
+                        return `
+          <tr class="item-row${isLast ? ' group-end' : ''}">
+            <td>${isFirst ? count : ''}</td>
+            <td>${isFirst ? group.name || '' : ''}</td>
+            <td>${isFirst ? group.width || '' : ''}</td>
+            <td>${rollNo || '&nbsp;'}</td>
+            <td>${shade || '&nbsp;'}</td>
+            <td class="qty-cell no-right-border">
+              ${qtyHtml}
+              ${
+                  isLast
+                      ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`
+                      : ''
+              }
+            </td>
           </tr>`;
-            }
+                    }
 
-            return `
-          <tr class="item-row">
-            <td>${group.roll_nos.length}</td>
-            <td>${group.name || ''}</td>
-            <td>${group.width || ''}</td>
-            <td class="stack-cell">${rollNosHtml}</td>
-            <td class="stack-cell">${shadesHtml}</td>
-            <td class="qty-cell">${metersCell}</td>
-            <td class="align-bottom"><div class="qty-rule">______</div>${group.price || ''}</td>
-            <td class="align-bottom no-right-border text-right"><div class="qty-rule">_______</div>${formatCurrency(group.total_amount) || ''}</td>
+                    return `
+          <tr class="item-row${isLast ? ' group-end' : ''}">
+            <td>${isFirst ? count : ''}</td>
+            <td>${isFirst ? group.name || '' : ''}</td>
+            <td>${isFirst ? group.width || '' : ''}</td>
+            <td>${rollNo || '&nbsp;'}</td>
+            <td>${shade || '&nbsp;'}</td>
+            <td class="qty-cell">
+              ${qtyHtml}
+              ${
+                  isLast
+                      ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`
+                      : ''
+              }
+            </td>
+            <td class="align-bottom">${
+                isLast
+                    ? `<div class="qty-rule">______</div>${group.price || ''}`
+                    : ''
+            }</td>
+            <td class="align-bottom no-right-border text-right">${
+                isLast
+                    ? `<div class="qty-rule">_______</div>${formatCurrency(group.total_amount) || ''}`
+                    : ''
+            }</td>
           </tr>`;
+                })
+                .join('');
         })
         .join('');
 
@@ -170,7 +190,10 @@ module.exports = (invoiceData, documentType = 'bill') => {
   <meta charset="utf-8" />
   <title>${heading} - ${invoiceData.sales_no || ''}</title>
   <style>
-    @page { size: A4; margin: 8mm; }
+    @page {
+      size: A4;
+      margin: 10mm;
+    }
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
@@ -178,24 +201,27 @@ module.exports = (invoiceData, documentType = 'bill') => {
       background: #fff;
       color: #111;
       font-family: Arial, Helvetica, sans-serif;
+      /* Prevent browser "fit to page" look when opened on screen */
+      zoom: 1;
+      transform: none;
     }
     .sheet {
-      width: 100%;
-      max-width: 194mm;
+      width: 190mm;
       margin: 0 auto;
       background: #fff;
     }
     .header {
       border: 1px solid #000;
       text-align: center;
-      padding: 8px 10px;
+      padding: 10px;
     }
     .company-name {
-      font-size: 22px;
+      font-size: 24px;
       font-weight: 700;
+      color: #2c3e50;
     }
     .sub-header {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
     }
     .details-row {
@@ -205,9 +231,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
     }
     .details-col {
       flex: 1;
-      font-size: 16px;
+      font-size: 18px;
       font-weight: 700;
-      padding: 6px 10px;
+      padding: 8px 10px;
     }
     .details-col.right {
       border-left: 1px solid #000;
@@ -219,41 +245,49 @@ module.exports = (invoiceData, documentType = 'bill') => {
       border: 1px solid #000;
       border-top: none;
     }
-    thead { display: table-header-group; }
-    tfoot { display: table-footer-group; }
-    tr.item-row, tr.footer-row {
+    thead {
+      display: table-header-group;
+    }
+    /* Allow individual roll rows to break across pages (do NOT avoid on whole groups) */
+    tr.item-row {
       page-break-inside: avoid;
       break-inside: avoid;
     }
     th, td {
-      padding: 6px;
+      padding: 6px 8px;
       text-align: left;
-      font-size: 15px;
+      font-size: 21px;
       font-weight: 700;
       vertical-align: top;
       border-right: 1px solid #000;
     }
     th {
       border-bottom: 1px solid #000;
-      font-size: 16px;
+      font-size: 18px;
+      padding: 6px 4px 10px;
     }
     .no-right-border { border-right: none !important; }
     .bottom-border { border-bottom: 1px solid #000; }
     .text-right { text-align: right; }
     .align-bottom { vertical-align: bottom; }
-    .stack-cell { white-space: pre-line; }
     .qty-cell { white-space: nowrap; }
     .qty-line {
       white-space: nowrap !important;
-      font-size: 15px;
-      line-height: 1.3;
+      font-size: 21px;
+      line-height: 1.25;
+    }
+    .qty-total {
+      font-weight: 700;
     }
     .qty-rule {
-      font-size: 15px;
+      font-size: 18px;
       line-height: 10px;
-      padding-bottom: 6px;
+      padding: 4px 0 8px;
     }
-    .words-cell { vertical-align: middle; }
+    .words-cell {
+      vertical-align: middle;
+      font-size: 18px;
+    }
     .footer-block {
       page-break-inside: avoid;
       break-inside: avoid;
@@ -269,8 +303,21 @@ module.exports = (invoiceData, documentType = 'bill') => {
       break-inside: avoid;
     }
     @media print {
-      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      .sheet { max-width: none; }
+      html, body {
+        width: auto !important;
+        height: auto !important;
+        zoom: 1 !important;
+        transform: none !important;
+      }
+      .sheet {
+        width: 100% !important;
+        max-width: none !important;
+      }
+      /* Hint Chrome to use actual size, not shrink-to-fit */
+      body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
     }
   </style>
 </head>
@@ -280,11 +327,11 @@ module.exports = (invoiceData, documentType = 'bill') => {
       <colgroup>${colgroup}</colgroup>
       <thead>
         <tr class="repeat-header">
-          <td colspan="${colCount}" style="padding:0;border:none;">
+          <td colspan="${colCount}" style="padding:0;border:none;font-size:inherit;">
             <div class="header">
               <div class="sub-header">${heading}</div>
               <div class="company-name">MOHIT TRADERS</div>
-              <div>ULHASNAGAR 421005</div>
+              <div style="font-size:14px;">ULHASNAGAR 421005</div>
             </div>
             <div class="details-row">
               <div class="details-col">
@@ -327,11 +374,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
       }
     </div>
   </div>
-  <script>
-    window.addEventListener('load', function () {
-      setTimeout(function () { window.focus(); }, 50);
-    });
-  </script>
 </body>
 </html>`;
 };
