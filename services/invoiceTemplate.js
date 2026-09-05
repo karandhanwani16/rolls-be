@@ -7,9 +7,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
         sumQuantityByUnit,
     } = require('../utils/quantityUnits');
 
-    // How many roll lines fit under header + column titles on A4 at full font size.
-    // Leave room so page 1 closes cleanly; remaining rolls + summary go to next page(s).
-    const ROLLS_PER_PAGE = 18;
+    // Full page of rolls (no summary). Last page leaves room for totals / challan note.
+    const ROWS_FULL_PAGE = 24;
+    const ROWS_LAST_PAGE = isChallan ? 20 : 16;
 
     const grouped = {};
     invoiceData.items.forEach((item) => {
@@ -58,11 +58,17 @@ module.exports = (invoiceData, documentType = 'bill') => {
         });
     });
 
+    // Fill continuation pages to the end; only the last page keeps space for the summary.
     const pages = [];
-    for (let i = 0; i < Math.max(rollLines.length, 1); i += ROLLS_PER_PAGE) {
-        pages.push(rollLines.slice(i, i + ROLLS_PER_PAGE));
+    const linesLeft = rollLines.slice();
+    if (linesLeft.length === 0) {
+        pages.push([]);
+    } else {
+        while (linesLeft.length > ROWS_LAST_PAGE) {
+            pages.push(linesLeft.splice(0, ROWS_FULL_PAGE));
+        }
+        pages.push(linesLeft);
     }
-    if (pages.length === 0) pages.push([]);
 
     const unitTotals = sumQuantityByUnit(
         invoiceData.items.map((item) => ({ meters: item.mts, unit: item.unit })),
@@ -114,11 +120,20 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th class="no-right-border">Amount</th>
           </tr>`;
 
-    const renderItemRows = (lines) => {
-        if (!lines.length) {
+    const renderItemRows = (lines, { fillPage = false } = {}) => {
+        if (!lines.length && !fillPage) {
             return `<tr><td colspan="${colCount}" class="no-right-border" style="padding:20px;text-align:center;">No items</td></tr>`;
         }
-        return lines
+
+        const emptyCells = isChallan
+            ? `
+            <td>&nbsp;</td><td></td><td></td><td></td><td></td>
+            <td class="no-right-border"></td>`
+            : `
+            <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td>
+            <td class="no-right-border"></td>`;
+
+        const rows = lines
             .map((line) => {
                 const { group, rollNo, shade, meters, isFirst, isLast, count } = line;
                 const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`;
@@ -159,6 +174,13 @@ module.exports = (invoiceData, documentType = 'bill') => {
           </tr>`;
             })
             .join('');
+
+        // Stretch column lines + bottom border to the end of the page
+        const filler = fillPage
+            ? `<tr class="filler-row">${emptyCells}</tr>`
+            : '';
+
+        return rows + filler;
     };
 
     const footerRows = isChallan
@@ -204,7 +226,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
                     : '';
 
             return `
-  <div class="page">
+  <div class="page${isLastPage ? ' page-last' : ' page-continue'}">
     <div class="header">
       <div class="sub-header">${heading}</div>
       <div class="company-name">MOHIT TRADERS</div>
@@ -224,15 +246,17 @@ module.exports = (invoiceData, documentType = 'bill') => {
         <div>Challan No.: ${invoiceData.challan_no || ''}</div>
       </div>
     </div>
-    <table class="items-table">
-      <colgroup>${colgroup}</colgroup>
-      <thead>
-        ${columnHeaderRow}
-      </thead>
-      <tbody>
-        ${renderItemRows(lines)}
-      </tbody>
-    </table>
+    <div class="table-shell">
+      <table class="items-table">
+        <colgroup>${colgroup}</colgroup>
+        <thead>
+          ${columnHeaderRow}
+        </thead>
+        <tbody>
+          ${renderItemRows(lines, { fillPage: !isLastPage })}
+        </tbody>
+      </table>
+    </div>
     ${
         isLastPage
             ? `<div class="footer-block">
@@ -276,16 +300,19 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-family: Arial, Helvetica, sans-serif;
     }
     .page {
+      /* Fill full printable A4 height so continuation pages close at the bottom */
       width: 194mm;
-      min-height: 277mm;
+      height: 281mm;
       margin: 0 auto 12px;
       background: #fff;
       display: flex;
       flex-direction: column;
       page-break-after: always;
       break-after: page;
+      overflow: hidden;
     }
-    .page:last-child {
+    .page:last-child,
+    .page-last {
       page-break-after: auto;
       break-after: auto;
       margin-bottom: 0;
@@ -293,7 +320,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
     .header {
       border: 1px solid #000;
       text-align: center;
-      padding: 10px;
+      padding: 8px 10px;
       flex-shrink: 0;
     }
     .company-name {
@@ -328,21 +355,41 @@ module.exports = (invoiceData, documentType = 'bill') => {
     .details-col.right {
       border-left: 1px solid #000;
     }
-    table.items-table {
-      width: 100%;
-      border-collapse: collapse;
-      table-layout: fixed;
+    /* Shell grows to page bottom and draws the closing border */
+    .table-shell {
+      flex: 1 1 auto;
+      min-height: 0;
       border: 1px solid #000;
       border-top: none;
-      /* Each page is its own closed table — border closes at bottom of this page */
-      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .page-last .table-shell {
+      flex: 0 1 auto;
+      border-bottom: none;
+    }
+    table.items-table {
+      width: 100%;
+      height: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      border: none;
+    }
+    .page-last .items-table {
+      height: auto;
+    }
+    tr.filler-row td {
+      height: 100%;
+      border-bottom: none;
+      vertical-align: top;
     }
     table.footer-table {
+      border: 1px solid #000;
       border-top: none;
       flex: 0 0 auto;
     }
     th, td {
-      padding: 5px 8px;
+      padding: 4px 8px;
       text-align: left;
       font-size: 21px;
       font-weight: 700;
@@ -397,12 +444,14 @@ module.exports = (invoiceData, documentType = 'bill') => {
       }
       .page {
         width: 100% !important;
-        min-height: 0;
+        height: 281mm;
         margin: 0;
         page-break-after: always;
         break-after: page;
+        overflow: hidden;
       }
-      .page:last-child {
+      .page:last-child,
+      .page-last {
         page-break-after: auto;
         break-after: auto;
       }
