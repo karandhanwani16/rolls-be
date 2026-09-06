@@ -410,6 +410,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 14px;
       font-weight: 700;
       line-height: 1.45;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
     .challan-note-en {
       text-align: center;
@@ -419,7 +422,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-weight: 700;
     }
     .challan-signature-row {
-      margin-top: 14px;
       text-align: left;
       font-size: 13px;
       font-weight: 700;
