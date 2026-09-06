@@ -249,7 +249,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
         <div>Bill No.: ${invoiceData.sales_no || '-'}</div>
         <div>Date: ${invoiceData.date || ''}</div>
         <div>Hamal: ${invoiceData.hamaal || '-'}</div>
-        <div>Challan No.: ${invoiceData.challan_no || ''}</div>
       </div>
     </div>
     <div class="table-shell">
