@@ -408,6 +408,7 @@ class SaleService {
             const invoiceData = {
                 customer: sale.customer_name,
                 date: format(new Date(sale.date), 'dd/MM/yyyy'),
+                unit: sale.unit || sale.items?.[0]?.unit || 'm',
                 items: sale.items.map(item => ({
                     name: item.product_name,
                     qty: item.meters,

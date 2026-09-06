@@ -1,15 +1,33 @@
+const fs = require('fs');
+const path = require('path');
+
+let challanFooterImageDataUri = '';
+try {
+    const footerImagePath = path.join(__dirname, '../assets/challan-footer-note.png');
+    const footerImageBase64 = fs.readFileSync(footerImagePath).toString('base64');
+    challanFooterImageDataUri = `data:image/png;base64,${footerImageBase64}`;
+} catch (error) {
+    console.warn('Challan footer image not found:', error.message);
+}
+
 module.exports = (invoiceData, documentType = 'bill') => {
     const isChallan = documentType === 'challan';
     const {
         normalizeUnit,
         unitAbbr,
+        unitColumnLabel,
         formatUnitTotals,
         sumQuantityByUnit,
     } = require('../utils/quantityUnits');
 
     // Full page of rolls (no summary). Last page leaves room for totals / challan note.
     const ROWS_FULL_PAGE = 24;
-    const ROWS_LAST_PAGE = isChallan ? 20 : 16;
+    const ROWS_LAST_PAGE = isChallan ? 18 : 16;
+
+    const documentUnit = normalizeUnit(
+        invoiceData.unit || invoiceData.items?.[0]?.unit || 'm'
+    );
+    const qtyColumnName = unitColumnLabel(documentUnit);
 
     const grouped = {};
     invoiceData.items.forEach((item) => {
@@ -106,7 +124,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th>Width</th>
             <th>Roll No.</th>
             <th>Shade</th>
-            <th class="no-right-border">Qty</th>
+            <th class="no-right-border">${qtyColumnName}</th>
           </tr>`
         : `
           <tr class="col-heading">
@@ -115,7 +133,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th>Width</th>
             <th>Roll No.</th>
             <th>Shade</th>
-            <th>Qty</th>
+            <th>${qtyColumnName}</th>
             <th>Rate</th>
             <th class="no-right-border">Amount</th>
           </tr>`;
@@ -186,12 +204,12 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const footerRows = isChallan
         ? `
         <tr>
-          <td colspan="5" class="text-right">Total Qty : ${totalQtyLabel}</td>
+          <td colspan="5" class="text-right">Total ${qtyColumnName} : ${totalQtyLabel}</td>
           <td class="no-right-border"></td>
         </tr>`
         : `
         <tr>
-          <td colspan="5" class="text-right bottom-border">Total Qty : ${totalQtyLabel}</td>
+          <td colspan="5" class="text-right bottom-border">Total ${qtyColumnName} : ${totalQtyLabel}</td>
           <td colspan="2" class="bottom-border">Sub Total</td>
           <td class="no-right-border text-right bottom-border">${formatCurrency(itemsTotal || 0)}</td>
         </tr>
@@ -271,7 +289,17 @@ module.exports = (invoiceData, documentType = 'bill') => {
               ? `<div class="challan-note">
         कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
         रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
+      </div>
+      ${
+          challanFooterImageDataUri
+              ? `<div class="challan-note-image">
+        <img src="${challanFooterImageDataUri}" alt="No Claim will be recognised after Cutting the Roll" />
       </div>`
+              : `<div class="challan-note challan-note-en">
+        No Claim will be recognised after Cutting the Roll
+        <div class="challan-signature">Signature _______________</div>
+      </div>`
+      }`
               : ''
       }
     </div>`
@@ -402,6 +430,29 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 14px;
       font-weight: 700;
       line-height: 1.45;
+    }
+    .challan-note-en {
+      text-align: center;
+    }
+    .challan-signature {
+      margin-top: 10px;
+      text-align: left;
+      font-size: 13px;
+    }
+    .challan-note-image {
+      margin-top: 0;
+      border: 1px solid #000;
+      border-top: none;
+      padding: 6px 8px;
+      text-align: center;
+      background: #fff;
+    }
+    .challan-note-image img {
+      display: block;
+      width: 100%;
+      max-height: 42mm;
+      object-fit: contain;
+      margin: 0 auto;
     }
     th, td {
       padding: 4px 8px;

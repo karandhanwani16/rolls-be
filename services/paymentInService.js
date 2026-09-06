@@ -18,29 +18,39 @@ const COLLECTION_STATUS = {
 
 /**
  * Amount credited to the customer's ledger for a payment.
- * NORMAL → full payment (actual_amount / received_amount).
- * VATAV customer payment → full gross (received_amount), not net after charges.
+ * Cash/watav money received + discount settles the customer account.
+ * NORMAL example: receive 9500 + discount 500 → credit 10000
+ * VATAV customer example: gross 9000 + discount 500 → credit 9500
+ *   (vendor charges do not reduce customer credit)
  * Standalone → 0 (no customer).
  */
 function customerCreditAmount(payment) {
     if (!payment.actual_id) return 0;
-    if (payment.payment_category === PAYMENT_CATEGORY.VATAV) {
-        if (payment.entry_type === ENTRY_TYPE.STANDALONE) return 0;
-        return payment.received_amount || 0;
+    if (
+        payment.payment_category === PAYMENT_CATEGORY.VATAV &&
+        payment.entry_type === ENTRY_TYPE.STANDALONE
+    ) {
+        return 0;
     }
-    return payment.actual_amount ?? payment.received_amount ?? 0;
+    const received = Number(payment.received_amount) || 0;
+    const discount = Number(payment.discount) || 0;
+    return received + discount;
 }
 
 function normalizePaymentPayload(paymentInData) {
     const category = (paymentInData.payment_category || PAYMENT_CATEGORY.NORMAL).toUpperCase();
     const received = Number(paymentInData.received_amount) || 0;
     const charges = Number(paymentInData.charges) || 0;
+    let discount = Number(paymentInData.discount) || 0;
 
     if (received <= 0) {
         throw new Error('Gross / received amount must be greater than 0');
     }
     if (charges < 0) {
         throw new Error('Charges cannot be negative');
+    }
+    if (discount < 0) {
+        throw new Error('Discount cannot be negative');
     }
     if (charges > received) {
         throw new Error('Charges cannot exceed the gross amount');
@@ -60,6 +70,7 @@ function normalizePaymentPayload(paymentInData) {
             actual_id: customerId,
             received_amount: received,
             charges: 0,
+            discount,
             actual_amount: received,
             type: paymentInData.type,
             description: paymentInData.description || '',
@@ -90,8 +101,9 @@ function normalizePaymentPayload(paymentInData) {
             throw new Error('Customer and Watav vendor must be different');
         }
     } else {
-        // Standalone — never linked to a customer
+        // Standalone — never linked to a customer; discount does not apply
         actualId = null;
+        discount = 0;
     }
 
     let collectionStatus = (paymentInData.collection_status || COLLECTION_STATUS.PENDING).toUpperCase();
@@ -115,6 +127,7 @@ function normalizePaymentPayload(paymentInData) {
         actual_id: actualId,
         received_amount: received,
         charges,
+        discount,
         actual_amount: received - charges,
         type: paymentInData.type || 'other',
         description: paymentInData.description || '',
@@ -127,6 +140,7 @@ function paymentCreateData(normalized) {
         received_amount: normalized.received_amount,
         actual_amount: normalized.actual_amount,
         charges: normalized.charges,
+        discount: normalized.discount || 0,
         type: normalized.type,
         description: normalized.description,
         payment_date: normalized.payment_date,
@@ -232,6 +246,7 @@ class PaymentInService {
                     received_amount: normalized.received_amount,
                     actual_amount: normalized.actual_amount,
                     charges: normalized.charges,
+                    discount: normalized.discount || 0,
                     type: normalized.type,
                     description: normalized.description,
                     payment_date: normalized.payment_date,
@@ -406,6 +421,10 @@ class PaymentInService {
                     receivedAmount: payment.received_amount || 0,
                     paidToWatav: payment.charges || 0,
                     vendorCharges: payment.charges || 0,
+                    discount: payment.discount || 0,
+                    customerSettled: isStandalone
+                        ? 0
+                        : (payment.received_amount || 0) + (payment.discount || 0),
                     actualAmount: payment.actual_amount || 0,
                     netAmount: payment.actual_amount || 0,
                     type: payment.type,

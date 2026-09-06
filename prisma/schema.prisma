@@ -88,9 +88,10 @@ model PaymentIn {
   payment_date       DateTime? @map("payment_date")
   receive_id         String?   // Watav vendor for VATAV; same as actual_id for NORMAL
   actual_id          String?   // Paying customer (required for NORMAL / VATAV customer payment)
-  received_amount    Float     // Gross amount
-  actual_amount      Float     // Net = received_amount - charges
-  charges            Float?
+  received_amount    Float     // Gross / cash or watav amount received
+  actual_amount      Float     // Net money = received_amount - charges (NORMAL: same as received)
+  charges            Float?    // Watav vendor charges
+  discount           Float?    @default(0) @map("payment_discount") // Settles extra on customer books; cash still = received
   type               String    // Instrument: cash / cheque / bank_transfer / upi / other
   description        String?
   // NORMAL | VATAV — separates normal payments from watav money flows

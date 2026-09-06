@@ -63,17 +63,24 @@ class CustomerService {
         const { customerCreditAmount, PAYMENT_CATEGORY } = require('./paymentInService');
         const isWatav = payment.payment_category === PAYMENT_CATEGORY.VATAV;
         const credit = customerCreditAmount(payment);
+        const discount = Number(payment.discount) || 0;
+        const baseLabel = isWatav
+            ? `Watav payment from ${payment.actual_customer?.name || 'Unknown'}`
+            : `Payment from ${payment.actual_customer?.name || 'Unknown'}`;
+        const particulars =
+            discount > 0
+                ? `${baseLabel} (incl. discount ₹${discount.toLocaleString('en-IN')})`
+                : baseLabel;
         return {
             date: payment.payment_date,
-            particulars: isWatav
-                ? `Watav payment from ${payment.actual_customer?.name || 'Unknown'}`
-                : `Payment from ${payment.actual_customer?.name || 'Unknown'}`,
+            particulars,
             voucherNo: payment.id,
             debit: 0,
-            // VATAV customer payments credit the full gross; NORMAL uses actual_amount
+            // Customer credit = received/gross + discount (charges do not reduce this)
             credit,
             paymentCategory: payment.payment_category || PAYMENT_CATEGORY.NORMAL,
             entryType: payment.entry_type || null,
+            discount,
         };
     }
 

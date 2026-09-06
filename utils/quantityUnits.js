@@ -20,6 +20,14 @@ function unitLabel(unit) {
   return QUANTITY_UNITS[normalizeUnit(unit)].label;
 }
 
+/** Column header on bill/challan: Meters, Yards, or KGs */
+function unitColumnLabel(unit) {
+  const key = normalizeUnit(unit);
+  if (key === 'yd') return 'Yards';
+  if (key === 'kg') return 'KGs';
+  return 'Meters';
+}
+
 function unitShort(unit) {
   return QUANTITY_UNITS[normalizeUnit(unit)].short;
 }
@@ -54,6 +62,7 @@ module.exports = {
   DEFAULT_UNIT,
   normalizeUnit,
   unitLabel,
+  unitColumnLabel,
   unitShort,
   unitAbbr,
   formatQuantity,
