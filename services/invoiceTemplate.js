@@ -1,15 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-
-let challanFooterImageDataUri = '';
-try {
-    const footerImagePath = path.join(__dirname, '../assets/challan-footer-note.png');
-    const footerImageBase64 = fs.readFileSync(footerImagePath).toString('base64');
-    challanFooterImageDataUri = `data:image/png;base64,${footerImageBase64}`;
-} catch (error) {
-    console.warn('Challan footer image not found:', error.message);
-}
-
 module.exports = (invoiceData, documentType = 'bill') => {
     const isChallan = documentType === 'challan';
     const {
@@ -290,16 +278,12 @@ module.exports = (invoiceData, documentType = 'bill') => {
         कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
         रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
       </div>
-      ${
-          challanFooterImageDataUri
-              ? `<div class="challan-note-image">
-        <img src="${challanFooterImageDataUri}" alt="No Claim will be recognised after Cutting the Roll" />
+      <div class="challan-note challan-note-en">
+        <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
+        <div class="challan-signature-row">
+          <span>Signature ________________________</span>
+        </div>
       </div>`
-              : `<div class="challan-note challan-note-en">
-        No Claim will be recognised after Cutting the Roll
-        <div class="challan-signature">Signature _______________</div>
-      </div>`
-      }`
               : ''
       }
     </div>`
@@ -434,25 +418,15 @@ module.exports = (invoiceData, documentType = 'bill') => {
     .challan-note-en {
       text-align: center;
     }
-    .challan-signature {
-      margin-top: 10px;
+    .challan-claim {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .challan-signature-row {
+      margin-top: 14px;
       text-align: left;
       font-size: 13px;
-    }
-    .challan-note-image {
-      margin-top: 0;
-      border: 1px solid #000;
-      border-top: none;
-      padding: 6px 8px;
-      text-align: center;
-      background: #fff;
-    }
-    .challan-note-image img {
-      display: block;
-      width: 100%;
-      max-height: 42mm;
-      object-fit: contain;
-      margin: 0 auto;
+      font-weight: 700;
     }
     th, td {
       padding: 4px 8px;
