@@ -278,11 +278,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
         कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
         रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
       </div>
-      <div class="challan-note challan-note-en">
-        <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
-        <div class="challan-signature-row">
-          <span>Signature ________________________</span>
-        </div>
+      <div class="challan-note challan-note-en"><div class="challan-claim">No Claim will be recognised after Cutting the Roll</div><div class="challan-signature-row"><span>Signature ________________________</span></div></div>   
       </div>`
               : ''
       }

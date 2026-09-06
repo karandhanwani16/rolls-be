@@ -224,14 +224,27 @@ class SaleService {
             }
 
             // Update the sale record
+            const customerId = saleDetails.customer_id || existingSale?.customer_id;
+            if (!customerId) {
+                throw new Error('Customer is required to update the sale');
+            }
+
+            const customerExists = await prisma.customer.findUnique({
+                where: { id: customerId },
+                select: { id: true, name: true },
+            });
+            if (!customerExists) {
+                throw new Error(
+                    'Selected customer was not found. Please re-select the customer and try again.'
+                );
+            }
+
             const sale = await prisma.sale.update({
                 where: { id },
                 data: {
-                    customer: {
-                        connect: { id: saleDetails.customer_id }
-                    },
-                    godown: saleDetails.godown_no ? { connect: { id: saleDetails.godown_no } } : { disconnect: true }, // if nullable
-                    customer_name: saleDetails.customer_name,
+                    customer_id: customerId,
+                    godown_id: saleDetails.godown_no || null,
+                    customer_name: saleDetails.customer_name || customerExists.name,
                     date: new Date(saleDetails.sales_date),
                     total: roundedTotal,
                     sales_no: saleDetails.sales_no,
