@@ -217,9 +217,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const creditDays = parseInt(invoiceData.credit_days, 10) || 0;
     const billNoteHtml = `
         <div class="bill-note">
-          PLEASE NOTE : PAYMENT AFTER<br/>
-          ${creditDays} CREDIT DAYS 1% INTREST WILL BE<br/>
-          CHARGED
+          PLEASE NOTE : PAYMENT AFTER ${creditDays} DAYS 1% INTREST WILL BE CHARGED<br/>
         </div>
         <div class="owner-signature">OWNER SIGNATURE : ________________</div>`;
 
@@ -516,7 +514,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       text-transform: uppercase;
     }
     .owner-signature {
-      margin-top: 40px;
+      margin-top: 48px;
       font-size: 16px;
       font-weight: 700;
       text-transform: uppercase;
