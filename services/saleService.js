@@ -117,7 +117,6 @@ class SaleService {
                     sales_no: saleDetails.sales_no,
                     description: saleDetails.description,
                     godown_id: saleDetails.godown_no,
-                    hamaal: saleDetails.hamaal,
                     maker: saleDetails.maker,
                     challan_no: saleDetails.challan_no,
                     sales_by: saleDetails.sales_by,
@@ -249,7 +248,6 @@ class SaleService {
                     total: roundedTotal,
                     sales_no: saleDetails.sales_no,
                     description: saleDetails.description,
-                    hamaal: saleDetails.hamaal,
                     maker: saleDetails.maker,
                     challan_no: saleDetails.challan_no,
                     sales_by: saleDetails.sales_by,
@@ -439,8 +437,8 @@ class SaleService {
                 sales_no: sale.sales_no,
                 challan_no: sale.challan_no,
                 godown: sale.godown?.name || '',
-                hamaal: sale.hamaal,
                 maker: sale.maker,
+                credit_days: sale.credit_days || 0,
             };
             return invoiceTemplate(invoiceData, documentType);
         } catch (error) {

@@ -2,9 +2,8 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const isChallan = documentType === 'challan';
     const {
         normalizeUnit,
-        unitAbbr,
         unitColumnLabel,
-        formatUnitTotals,
+        formatUnitTotalsNumeric,
         sumQuantityByUnit,
     } = require('../utils/quantityUnits');
 
@@ -79,7 +78,8 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const unitTotals = sumQuantityByUnit(
         invoiceData.items.map((item) => ({ meters: item.mts, unit: item.unit })),
     );
-    const totalQtyLabel = formatUnitTotals(unitTotals);
+    const totalQtyLabel = formatUnitTotalsNumeric(unitTotals);
+    const docNoLabel = isChallan ? 'Chalan No.' : 'Bill No.';
 
     const formatCurrency = (value) => {
         return typeof value === 'number'
@@ -142,9 +142,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
         const rows = lines
             .map((line) => {
                 const { group, rollNo, shade, meters, isFirst, isLast, count } = line;
-                const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`;
+                const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}</div>`;
                 const groupTotalHtml = isLast
-                    ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}&nbsp;${unitAbbr(group.unit)}</div>`
+                    ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}</div>`
                     : '';
 
                 if (isChallan) {
@@ -189,6 +189,14 @@ module.exports = (invoiceData, documentType = 'bill') => {
         return rows + filler;
     };
 
+    const billNoteHtml = `
+        <div class="bill-note">
+          PLEASE NOTE : PAYMENT AFTER<br/>
+          ( CREDIT DAYS ) 1% INTREST WILL BE<br/>
+          CHARGED
+        </div>
+        <div class="owner-signature">OWNER SIGNATURE : ________________</div>`;
+
     const footerRows = isChallan
         ? `
         <tr>
@@ -202,7 +210,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
           <td class="no-right-border text-right bottom-border">${formatCurrency(itemsTotal || 0)}</td>
         </tr>
         <tr>
-          <td colspan="5" rowspan="5" class="text-right words-cell">${convertNumberToWords(roundedTotal) || ''}</td>
+          <td colspan="5" rowspan="5" class="bill-note-cell">${billNoteHtml}</td>
           <td colspan="2" class="bottom-border">Transport Charges</td>
           <td class="no-right-border text-right bottom-border">${formatCurrency(transportCharges)}</td>
         </tr>
@@ -235,7 +243,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
   <div class="page${isLastPage ? ' page-last' : ' page-continue'}">
     <div class="header">
       <div class="sub-header">${heading}</div>
-      <div class="company-name">MOHIT TRADERS</div>
+      <div class="company-name">T. A. TEX</div>
       <div class="address">ULHASNAGAR 421005</div>
       ${continued}
     </div>
@@ -246,9 +254,8 @@ module.exports = (invoiceData, documentType = 'bill') => {
         <div>Maker : ${invoiceData.maker || '-'}</div>
       </div>
       <div class="details-col right">
-        <div>Bill No.: ${invoiceData.sales_no || '-'}</div>
+        <div>${docNoLabel}: ${invoiceData.sales_no || '-'}</div>
         <div>Date: ${invoiceData.date || ''}</div>
-        <div>Hamal: ${invoiceData.hamaal || '-'}</div>
       </div>
     </div>
     <div class="table-shell">
@@ -280,9 +287,8 @@ module.exports = (invoiceData, documentType = 'bill') => {
       <div class="challan-note challan-note-en" style="padding-top: 2px;">
         <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
         <div class="challan-signature-row">
-          <span>Signature ________________________</span
+          <span>Maker Signature ________________________</span>
         </div>
-      </div>   
       </div>`
               : ''
       }
@@ -465,6 +471,23 @@ module.exports = (invoiceData, documentType = 'bill') => {
     .words-cell {
       vertical-align: middle;
       font-size: 18px;
+    }
+    .bill-note-cell {
+      vertical-align: top;
+      text-align: left;
+      padding: 8px 10px;
+    }
+    .bill-note {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.35;
+      text-transform: uppercase;
+    }
+    .owner-signature {
+      margin-top: 18px;
+      font-size: 16px;
+      font-weight: 700;
+      text-transform: uppercase;
     }
     @media print {
       html, body {

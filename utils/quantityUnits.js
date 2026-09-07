@@ -57,6 +57,14 @@ function formatUnitTotals(totals) {
     .join(' + ') || `0 ${unitAbbr(DEFAULT_UNIT)}`;
 }
 
+/** Numeric totals only (no yd/m/kg suffixes) — for bill/challan print */
+function formatUnitTotalsNumeric(totals) {
+  return Object.entries(totals || {})
+    .filter(([, qty]) => qty > 0)
+    .map(([, qty]) => Number(qty).toFixed(2))
+    .join(' + ') || '0.00';
+}
+
 module.exports = {
   QUANTITY_UNITS,
   DEFAULT_UNIT,
@@ -68,4 +76,5 @@ module.exports = {
   formatQuantity,
   sumQuantityByUnit,
   formatUnitTotals,
+  formatUnitTotalsNumeric,
 };
