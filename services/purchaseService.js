@@ -2,6 +2,10 @@ const { PurchaseItemStatus } = require('@prisma/client');
 const prisma = require('../prisma/client');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');
+const {
+    allocatePurchaseOutstanding,
+    attachPurchaseOutstanding,
+} = require('../utils/purchaseOutstanding');
 
 async function syncProductWidthsFromItems(tx, items) {
     const widthByProduct = new Map();
@@ -23,8 +27,43 @@ async function syncProductWidthsFromItems(tx, items) {
 }
 
 class PurchaseService {
+    async enrichPurchasesWithPaymentStatus(purchases) {
+        if (!purchases || purchases.length === 0) {
+            return purchases || [];
+        }
+
+        const supplierIds = [...new Set(purchases.map((purchase) => purchase.supplier_id))];
+        const [allPurchases, payments, purchaseReturns, suppliers] = await Promise.all([
+            prisma.purchase.findMany({
+                where: { supplier_id: { in: supplierIds } },
+                orderBy: [{ date: 'asc' }, { created_at: 'asc' }],
+            }),
+            prisma.paymentOut.findMany({
+                where: { supplier_id: { in: supplierIds } },
+                orderBy: [{ payment_date: 'asc' }, { created_at: 'asc' }],
+            }),
+            prisma.purchaseReturn.findMany({
+                where: { supplier_id: { in: supplierIds } },
+            }),
+            prisma.supplier.findMany({
+                where: { id: { in: supplierIds } },
+            }),
+        ]);
+
+        const remainingById = allocatePurchaseOutstanding({
+            purchases: allPurchases,
+            payments,
+            purchaseReturns,
+            suppliers,
+        });
+
+        return purchases.map((purchase) =>
+            attachPurchaseOutstanding(purchase, remainingById.get(purchase.id))
+        );
+    }
+
     async getAllPurchases(supplierId) {
-        return await prisma.purchase.findMany({
+        const purchases = await prisma.purchase.findMany({
             where: supplierId ? { supplier_id: supplierId } : undefined,
             include: {
                 supplier: true,
@@ -34,6 +73,7 @@ class PurchaseService {
                 created_at: 'desc'
             }
         });
+        return this.enrichPurchasesWithPaymentStatus(purchases);
     }
 
     async getPurchaseById(id) {
@@ -49,7 +89,8 @@ class PurchaseService {
             throw new Error('Purchase not found');
         }
 
-        return purchase;
+        const [enriched] = await this.enrichPurchasesWithPaymentStatus([purchase]);
+        return enriched;
     }
 
     async createPurchase(purchaseData) {
@@ -75,6 +116,7 @@ class PurchaseService {
                     transport: purchaseDetails.transport,
                     transport_charges: transportCharges,
                     discount,
+                    credit_days: parseInt(purchaseDetails.credit_days, 10) || 0,
                     unit: billUnit,
                     received_by: purchaseDetails.received_by,
                     created_at: new Date(),
@@ -148,6 +190,7 @@ class PurchaseService {
                     transport: purchaseDetails.transport,
                     transport_charges: transportCharges,
                     discount,
+                    credit_days: parseInt(purchaseDetails.credit_days, 10) || 0,
                     unit: billUnit,
                     received_by: purchaseDetails.received_by,
                     updated_at: new Date()
@@ -270,12 +313,15 @@ class PurchaseService {
             select: {
                 id: true,
                 purchase_no: true,
+                supplier_id: true,
                 godown: true,
                 date: true,
                 total: true,
                 transport: true,
                 transport_charges: true,
+                credit_days: true,
                 received_by: true,
+                created_at: true,
                 supplier: {
                     select: {
                         id: true,
@@ -287,9 +333,10 @@ class PurchaseService {
                 date: 'desc'
             }
         });
-        console.log(purchases);
 
-        const purchasesWithGodown = await Promise.all(purchases.map(async purchase => ({
+        const enrichedPurchases = await this.enrichPurchasesWithPaymentStatus(purchases);
+
+        const purchasesWithGodown = await Promise.all(enrichedPurchases.map(async purchase => ({
             ...purchase,
             godown: await this.getPurchaseGodownName(purchase.godown)
         })));
@@ -297,10 +344,11 @@ class PurchaseService {
         return purchasesWithGodown;
     }
     async getPurchaseGodownName(godown) {
+        if (!godown) return null;
         const godownDetails = await prisma.godown.findUnique({
             where: { id: godown }
         });
-        return godownDetails.name;
+        return godownDetails?.name || null;
     }
 }
 

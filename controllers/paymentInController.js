@@ -100,6 +100,7 @@ class PaymentInController {
                 success: true,
                 data: report.transactions,
                 byWatav: report.byWatav,
+                receipts: report.receipts,
                 summary: report.summary,
             });
         } catch (error) {
@@ -136,6 +137,75 @@ class PaymentInController {
             });
         } catch (error) {
             console.error('Uncollect watav entries error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async getWatavVendorReceipts(req, res) {
+        try {
+            const { vendorId, startDate, endDate } = req.query;
+            const receipts = await paymentInService.getWatavVendorReceipts({
+                vendorId: vendorId || undefined,
+                startDate,
+                endDate,
+            });
+            return res.json({
+                success: true,
+                data: receipts,
+            });
+        } catch (error) {
+            console.error('Get watav vendor receipts error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async getWatavVendorReceiptById(req, res) {
+        try {
+            const receipt = await paymentInService.getWatavVendorReceiptById(req.params.id);
+            return res.json({
+                success: true,
+                data: receipt,
+            });
+        } catch (error) {
+            console.error('Get watav vendor receipt error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async createWatavVendorReceipt(req, res) {
+        try {
+            const receipt = await paymentInService.createWatavVendorReceipt(req.body);
+            return res.status(201).json({
+                success: true,
+                data: receipt,
+            });
+        } catch (error) {
+            console.error('Create watav vendor receipt error:', error);
+            return res.status(400).json({
+                success: false,
+                error: error.message
+            });
+        }
+    }
+
+    async deleteWatavVendorReceipt(req, res) {
+        try {
+            const result = await paymentInService.deleteWatavVendorReceipt(req.params.id);
+            return res.json({
+                success: true,
+                message: result.message,
+            });
+        } catch (error) {
+            console.error('Delete watav vendor receipt error:', error);
             return res.status(400).json({
                 success: false,
                 error: error.message

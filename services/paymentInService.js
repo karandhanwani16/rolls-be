@@ -1,5 +1,14 @@
 const prisma = require('../prisma/client');
 const transactionService = require('./transactions');
+const watavSettlementService = require('./watavSettlementService');
+const {
+    SETTLEMENT_STATUS,
+    decoratePayment,
+    outstandingWhereFilter,
+    addAmounts,
+    compareAmounts,
+    summarizeVendor,
+} = require('./watavAllocation');
 
 const PAYMENT_CATEGORY = {
     NORMAL: 'NORMAL',
@@ -12,9 +21,12 @@ const ENTRY_TYPE = {
 };
 
 const COLLECTION_STATUS = {
-    PENDING: 'PENDING',
-    COLLECTED: 'COLLECTED',
+    PENDING: SETTLEMENT_STATUS.PENDING,
+    PARTIALLY_SETTLED: SETTLEMENT_STATUS.PARTIALLY_SETTLED,
+    COMPLETED: SETTLEMENT_STATUS.COMPLETED,
 };
+
+const PAYMENT_INCLUDE = watavSettlementService.PAYMENT_INCLUDE;
 
 /**
  * Amount credited to the customer's ledger for a payment.
@@ -23,6 +35,7 @@ const COLLECTION_STATUS = {
  * VATAV customer example: gross 9000 + discount 500 → credit 9500
  *   (vendor charges do not reduce customer credit)
  * Standalone → 0 (no customer).
+ * Vendor receipts never call this — they must not reduce customer balance again.
  */
 function customerCreditAmount(payment) {
     if (!payment.actual_id) return 0;
@@ -37,7 +50,7 @@ function customerCreditAmount(payment) {
     return received + discount;
 }
 
-function normalizePaymentPayload(paymentInData) {
+function normalizePaymentPayload(paymentInData, { isCreate = false, existing = null } = {}) {
     const category = (paymentInData.payment_category || PAYMENT_CATEGORY.NORMAL).toUpperCase();
     const received = Number(paymentInData.received_amount) || 0;
     const charges = Number(paymentInData.charges) || 0;
@@ -101,21 +114,29 @@ function normalizePaymentPayload(paymentInData) {
             throw new Error('Customer and Watav vendor must be different');
         }
     } else {
-        // Standalone — never linked to a customer; discount does not apply
         actualId = null;
         discount = 0;
     }
 
-    let collectionStatus = (paymentInData.collection_status || COLLECTION_STATUS.PENDING).toUpperCase();
-    if (![COLLECTION_STATUS.PENDING, COLLECTION_STATUS.COLLECTED].includes(collectionStatus)) {
-        throw new Error('collection_status must be PENDING or COLLECTED');
-    }
-
+    // Settlement status is derived from vendor receipts, never from the payment form.
+    let collectionStatus = SETTLEMENT_STATUS.PENDING;
     let collectionDate = null;
-    if (collectionStatus === COLLECTION_STATUS.COLLECTED) {
-        collectionDate = paymentInData.collection_date
-            ? new Date(paymentInData.collection_date)
-            : new Date();
+    if (!isCreate && existing) {
+        const decorated = decoratePayment(existing);
+        collectionStatus = decorated.settlementStatus;
+        collectionDate = existing.collection_date || null;
+        if (compareAmounts(decorated.totalSettledAmount, received) > 0) {
+            throw new Error(
+                'Cannot reduce the Watav amount below what has already been settled from the vendor'
+            );
+        }
+        if (
+            existing.watav_allocations?.length > 0 &&
+            existing.receive_id &&
+            existing.receive_id !== vendorId
+        ) {
+            throw new Error('Cannot change Watav vendor after settlement allocations exist');
+        }
     }
 
     return {
@@ -157,19 +178,58 @@ function paymentCreateData(normalized) {
     };
 }
 
+function mapWatavReportRow(payment, index) {
+    const decorated = decoratePayment(payment);
+    const isStandalone = payment.entry_type === ENTRY_TYPE.STANDALONE || !payment.actual_id;
+    return {
+        srno: index + 1,
+        id: payment.id,
+        date: payment.payment_date || payment.created_at,
+        watavCustomerId: payment.receive_id,
+        watavCustomerName: payment.receive_customer?.name || 'Unknown',
+        actualCustomerId: payment.actual_id,
+        actualCustomerName: isStandalone
+            ? null
+            : payment.actual_customer?.name || 'Unknown',
+        entryType: isStandalone ? ENTRY_TYPE.STANDALONE : ENTRY_TYPE.CUSTOMER_PAYMENT,
+        collectionStatus: decorated.settlementStatus,
+        collectionDate: payment.collection_date,
+        originalAmount: decorated.originalAmount,
+        totalSettledAmount: decorated.totalSettledAmount,
+        remainingAmount: decorated.remainingAmount,
+        receivedAmount: payment.received_amount || 0,
+        paidToWatav: payment.charges || 0,
+        vendorCharges: payment.charges || 0,
+        discount: payment.discount || 0,
+        customerSettled: isStandalone
+            ? 0
+            : (payment.received_amount || 0) + (payment.discount || 0),
+        actualAmount: payment.actual_amount || 0,
+        netAmount: payment.actual_amount || 0,
+        type: payment.type,
+        description: payment.description || '',
+        allocations: (payment.watav_allocations || []).map((row) => ({
+            id: row.id,
+            allocatedAmount: row.allocated_amount,
+            receiptId: row.receipt_id,
+            receiptDate: row.receipt?.receipt_date || null,
+            receiptAmount: row.receipt?.amount || null,
+            receiptReference: row.receipt?.reference || null,
+            unallocatedAmount: row.receipt?.unallocated_amount || 0,
+        })),
+    };
+}
+
 class PaymentInService {
     async getAllPaymentsIn() {
         try {
             const paymentsIn = await prisma.paymentIn.findMany({
-                include: {
-                    receive_customer: true,
-                    actual_customer: true,
-                },
+                include: PAYMENT_INCLUDE,
                 orderBy: {
                     created_at: 'desc',
                 },
             });
-            return paymentsIn;
+            return paymentsIn.map(decoratePayment);
         } catch (error) {
             throw new Error(`Failed to fetch payments in: ${error.message}`);
         }
@@ -179,17 +239,14 @@ class PaymentInService {
         try {
             const paymentIn = await prisma.paymentIn.findUnique({
                 where: { id },
-                include: {
-                    receive_customer: true,
-                    actual_customer: true,
-                },
+                include: PAYMENT_INCLUDE,
             });
 
             if (!paymentIn) {
                 throw new Error(`Payment in with ID ${id} not found`);
             }
 
-            return paymentIn;
+            return decoratePayment(paymentIn);
         } catch (error) {
             throw new Error(`Failed to fetch payment in: ${error.message}`);
         }
@@ -197,14 +254,11 @@ class PaymentInService {
 
     async createPaymentIn(paymentInData) {
         try {
-            const normalized = normalizePaymentPayload(paymentInData);
+            const normalized = normalizePaymentPayload(paymentInData, { isCreate: true });
 
             const newPaymentIn = await prisma.paymentIn.create({
                 data: paymentCreateData(normalized),
-                include: {
-                    receive_customer: true,
-                    actual_customer: true,
-                },
+                include: PAYMENT_INCLUDE,
             });
 
             const credit = customerCreditAmount(newPaymentIn);
@@ -222,7 +276,7 @@ class PaymentInService {
                 );
             }
 
-            return newPaymentIn;
+            return decoratePayment(newPaymentIn);
         } catch (error) {
             throw new Error(`Failed to create payment in: ${error.message}`);
         }
@@ -230,15 +284,29 @@ class PaymentInService {
 
     async updatePaymentIn(id, paymentInData) {
         try {
-            const existing = await prisma.paymentIn.findUnique({ where: { id } });
+            const existing = await prisma.paymentIn.findUnique({
+                where: { id },
+                include: { watav_allocations: true },
+            });
             if (!existing) {
                 throw new Error(`Payment in with ID ${id} not found`);
             }
 
-            const normalized = normalizePaymentPayload({
-                ...existing,
-                ...paymentInData,
-            });
+            const normalized = normalizePaymentPayload(
+                {
+                    ...existing,
+                    ...paymentInData,
+                },
+                { isCreate: false, existing }
+            );
+
+            if (
+                existing.payment_category === PAYMENT_CATEGORY.VATAV &&
+                normalized.payment_category === PAYMENT_CATEGORY.NORMAL &&
+                existing.watav_allocations?.length > 0
+            ) {
+                throw new Error('Cannot convert a settled Watav payment to a normal payment');
+            }
 
             const updatedPaymentIn = await prisma.paymentIn.update({
                 where: { id },
@@ -257,24 +325,30 @@ class PaymentInService {
                     receive_id: normalized.receive_id,
                     actual_id: normalized.actual_id,
                 },
-                include: {
-                    receive_customer: true,
-                    actual_customer: true,
-                },
+                include: PAYMENT_INCLUDE,
             });
 
-            const credit = customerCreditAmount(updatedPaymentIn);
-            if (credit > 0 && updatedPaymentIn.actual_id) {
+            if (updatedPaymentIn.payment_category === PAYMENT_CATEGORY.VATAV) {
+                await watavSettlementService.recalcPaymentStatus(prisma, updatedPaymentIn.id);
+            }
+
+            const refreshed = await prisma.paymentIn.findUnique({
+                where: { id },
+                include: PAYMENT_INCLUDE,
+            });
+
+            const credit = customerCreditAmount(refreshed);
+            if (credit > 0 && refreshed.actual_id) {
                 await transactionService.createTransactionRecord(
                     'incoming',
-                    `Payment updated for ${updatedPaymentIn.actual_customer?.name || 'Customer'}`,
-                    updatedPaymentIn.actual_id,
+                    `Payment updated for ${refreshed.actual_customer?.name || 'Customer'}`,
+                    refreshed.actual_id,
                     null,
                     credit
                 );
             }
 
-            return updatedPaymentIn;
+            return decoratePayment(refreshed);
         } catch (error) {
             throw new Error(`Failed to update payment in: ${error.message}`);
         }
@@ -286,11 +360,18 @@ class PaymentInService {
                 where: { id },
                 include: {
                     actual_customer: true,
+                    watav_allocations: true,
                 },
             });
 
             if (!paymentIn) {
                 throw new Error(`Payment in with ID ${id} not found`);
+            }
+
+            if (paymentIn.watav_allocations?.length > 0) {
+                throw new Error(
+                    'Cannot delete a Watav payment that has vendor settlement allocations. Delete the vendor receipt first.'
+                );
             }
 
             const credit = customerCreditAmount(paymentIn);
@@ -313,62 +394,116 @@ class PaymentInService {
         }
     }
 
+    async createWatavVendorReceipt(data) {
+        return watavSettlementService.createVendorReceipt(data);
+    }
+
+    async getWatavVendorReceipts(filters) {
+        return watavSettlementService.getReceipts(filters);
+    }
+
+    async getWatavVendorReceiptById(id) {
+        return watavSettlementService.getReceiptById(id);
+    }
+
+    async deleteWatavVendorReceipt(id) {
+        return watavSettlementService.deleteVendorReceipt(id);
+    }
+
     /**
-     * Mark one or more VATAV entries as collected (batch collection from a vendor).
+     * Backward-compatible collect: records a vendor receipt and FIFO-allocates.
+     * Prefer createWatavVendorReceipt with vendor_id + amount.
      */
-    async collectWatavEntries({ ids, collection_date }) {
-        if (!Array.isArray(ids) || ids.length === 0) {
-            throw new Error('At least one payment id is required');
+    async collectWatavEntries({ ids, collection_date, vendor_id, amount, ...rest }) {
+        if (vendor_id && amount != null) {
+            return watavSettlementService.createVendorReceipt({
+                vendor_id,
+                amount,
+                receipt_date: collection_date,
+                ...rest,
+            });
         }
 
-        const collectionDate = collection_date ? new Date(collection_date) : new Date();
+        if (!Array.isArray(ids) || ids.length === 0) {
+            throw new Error('Watav vendor and amount are required');
+        }
 
-        const result = await prisma.paymentIn.updateMany({
+        const payments = await prisma.paymentIn.findMany({
             where: {
                 id: { in: ids },
                 payment_category: PAYMENT_CATEGORY.VATAV,
             },
-            data: {
-                collection_status: COLLECTION_STATUS.COLLECTED,
-                collection_date: collectionDate,
-            },
+            include: { watav_allocations: true },
         });
 
-        return {
-            updated: result.count,
-            collection_date: collectionDate,
-            collection_status: COLLECTION_STATUS.COLLECTED,
-        };
+        if (payments.length === 0) {
+            throw new Error('No Watav payments found for collection');
+        }
+
+        const vendorIds = [...new Set(payments.map((p) => p.receive_id).filter(Boolean))];
+        if (vendorIds.length !== 1) {
+            throw new Error('All entries must belong to the same Watav vendor');
+        }
+
+        const remainingTotal = payments
+            .map(decoratePayment)
+            .reduce((sum, p) => addAmounts(sum, p.remainingAmount), 0);
+
+        if (remainingTotal <= 0) {
+            throw new Error('Selected Watav entries have no remaining amount');
+        }
+
+        return watavSettlementService.createVendorReceipt({
+            vendor_id: vendorIds[0],
+            amount: remainingTotal,
+            receipt_date: collection_date,
+            type: rest.type || 'other',
+            description: rest.description || 'Watav vendor collection',
+            reference: rest.reference || null,
+        });
     }
 
     /**
-     * Mark VATAV entries as pending again (undo collection).
+     * Undo legacy fully-settled rows that have no allocation history.
+     * Allocated receipts must be deleted instead.
      */
     async uncollectWatavEntries({ ids }) {
         if (!Array.isArray(ids) || ids.length === 0) {
             throw new Error('At least one payment id is required');
         }
 
+        const payments = await prisma.paymentIn.findMany({
+            where: { id: { in: ids }, payment_category: PAYMENT_CATEGORY.VATAV },
+            include: { watav_allocations: true },
+        });
+
+        const allocated = payments.filter((p) => (p.watav_allocations || []).length > 0);
+        if (allocated.length > 0) {
+            throw new Error(
+                'Cannot uncollect Watav payments that have vendor receipts. Delete the receipt instead.'
+            );
+        }
+
         const result = await prisma.paymentIn.updateMany({
             where: {
                 id: { in: ids },
                 payment_category: PAYMENT_CATEGORY.VATAV,
             },
             data: {
-                collection_status: COLLECTION_STATUS.PENDING,
+                collection_status: SETTLEMENT_STATUS.PENDING,
                 collection_date: null,
             },
         });
 
         return {
             updated: result.count,
-            collection_status: COLLECTION_STATUS.PENDING,
+            collection_status: SETTLEMENT_STATUS.PENDING,
         };
     }
 
     /**
-     * Dedicated Watav report: pending / collected / vendor accounts.
-     * Includes both customer-linked and standalone entries.
+     * Dedicated Watav report: receivable / settled / pending / unallocated.
+     * Customer-linked Watav payments are already paid on the customer ledger.
      */
     async getWatavReport({ startDate, endDate, watavCustomerId, collectionStatus, entryType }) {
         try {
@@ -384,53 +519,28 @@ class PaymentInService {
                 payment_category: PAYMENT_CATEGORY.VATAV,
                 ...(Object.keys(dateFilter).length > 0 ? { payment_date: dateFilter } : {}),
                 ...(watavCustomerId ? { receive_id: watavCustomerId } : { receive_id: { not: null } }),
-                ...(collectionStatus ? { collection_status: collectionStatus.toUpperCase() } : {}),
+                ...outstandingWhereFilter(collectionStatus),
                 ...(entryType ? { entry_type: entryType.toUpperCase() } : {}),
             };
 
-            // Also include legacy watav rows not yet backfilled (receive !== actual)
-            // if payment_category filter alone would miss them — migration handles backfill;
-            // keep category filter as source of truth after migration.
+            const [payments, receipts] = await Promise.all([
+                prisma.paymentIn.findMany({
+                    where,
+                    include: PAYMENT_INCLUDE,
+                    orderBy: [
+                        { payment_date: 'asc' },
+                        { created_at: 'asc' },
+                    ],
+                }),
+                watavSettlementService.getReceipts({
+                    vendorId: watavCustomerId || undefined,
+                    startDate,
+                    endDate,
+                }),
+            ]);
 
-            const payments = await prisma.paymentIn.findMany({
-                where,
-                include: {
-                    receive_customer: true,
-                    actual_customer: true,
-                },
-                orderBy: {
-                    payment_date: 'asc',
-                },
-            });
-
-            const transactions = payments.map((payment, index) => {
-                const isStandalone = payment.entry_type === ENTRY_TYPE.STANDALONE || !payment.actual_id;
-                return {
-                    srno: index + 1,
-                    id: payment.id,
-                    date: payment.payment_date || payment.created_at,
-                    watavCustomerId: payment.receive_id,
-                    watavCustomerName: payment.receive_customer?.name || 'Unknown',
-                    actualCustomerId: payment.actual_id,
-                    actualCustomerName: isStandalone
-                        ? null
-                        : payment.actual_customer?.name || 'Unknown',
-                    entryType: isStandalone ? ENTRY_TYPE.STANDALONE : ENTRY_TYPE.CUSTOMER_PAYMENT,
-                    collectionStatus: payment.collection_status || COLLECTION_STATUS.PENDING,
-                    collectionDate: payment.collection_date,
-                    receivedAmount: payment.received_amount || 0,
-                    paidToWatav: payment.charges || 0,
-                    vendorCharges: payment.charges || 0,
-                    discount: payment.discount || 0,
-                    customerSettled: isStandalone
-                        ? 0
-                        : (payment.received_amount || 0) + (payment.discount || 0),
-                    actualAmount: payment.actual_amount || 0,
-                    netAmount: payment.actual_amount || 0,
-                    type: payment.type,
-                    description: payment.description || '',
-                };
-            });
+            const transactions = payments.map((payment, index) => mapWatavReportRow(payment, index));
+            const vendorSummary = summarizeVendor(payments, receipts, watavCustomerId || null);
 
             const emptyVendor = (id, name) => ({
                 watavCustomerId: id,
@@ -441,6 +551,11 @@ class PaymentInService {
                 totalReceived: 0,
                 totalPaidToWatav: 0,
                 totalActualAmount: 0,
+                totalReceivable: 0,
+                totalSettled: 0,
+                currentPending: 0,
+                partiallySettledCount: 0,
+                unallocatedAmount: 0,
                 pendingGross: 0,
                 pendingNet: 0,
                 pendingCharges: 0,
@@ -463,37 +578,62 @@ class PaymentInService {
                 }
                 const bucket = byWatav[row.watavCustomerId];
                 bucket.entries += 1;
-                bucket.totalReceived += row.receivedAmount;
-                bucket.totalPaidToWatav += row.paidToWatav;
-                bucket.totalActualAmount += row.actualAmount;
+                bucket.totalReceived = addAmounts(bucket.totalReceived, row.receivedAmount);
+                bucket.totalPaidToWatav = addAmounts(bucket.totalPaidToWatav, row.paidToWatav);
+                bucket.totalActualAmount = addAmounts(bucket.totalActualAmount, row.actualAmount);
+                bucket.totalReceivable = addAmounts(bucket.totalReceivable, row.originalAmount);
+                bucket.totalSettled = addAmounts(bucket.totalSettled, row.totalSettledAmount);
+                bucket.currentPending = addAmounts(bucket.currentPending, row.remainingAmount);
 
                 if (row.entryType === ENTRY_TYPE.STANDALONE) {
                     bucket.standaloneEntries += 1;
-                    bucket.standaloneGross += row.receivedAmount;
+                    bucket.standaloneGross = addAmounts(bucket.standaloneGross, row.receivedAmount);
                 } else {
                     bucket.customerLinkedEntries += 1;
-                    bucket.customerLinkedGross += row.receivedAmount;
+                    bucket.customerLinkedGross = addAmounts(
+                        bucket.customerLinkedGross,
+                        row.receivedAmount
+                    );
                 }
 
-                if (row.collectionStatus === COLLECTION_STATUS.COLLECTED) {
+                if (row.collectionStatus === SETTLEMENT_STATUS.COMPLETED) {
                     bucket.collectedEntries += 1;
-                    bucket.collectedGross += row.receivedAmount;
-                    bucket.collectedNet += row.netAmount;
-                    bucket.collectedCharges += row.vendorCharges;
+                    bucket.collectedGross = addAmounts(bucket.collectedGross, row.receivedAmount);
+                    bucket.collectedNet = addAmounts(bucket.collectedNet, row.netAmount);
+                    bucket.collectedCharges = addAmounts(bucket.collectedCharges, row.vendorCharges);
                 } else {
                     bucket.pendingEntries += 1;
-                    bucket.pendingGross += row.receivedAmount;
-                    bucket.pendingNet += row.netAmount;
-                    bucket.pendingCharges += row.vendorCharges;
+                    bucket.pendingGross = addAmounts(bucket.pendingGross, row.remainingAmount);
+                    bucket.pendingNet = addAmounts(bucket.pendingNet, row.remainingAmount);
+                    bucket.pendingCharges = addAmounts(bucket.pendingCharges, row.vendorCharges);
+                    if (row.collectionStatus === SETTLEMENT_STATUS.PARTIALLY_SETTLED) {
+                        bucket.partiallySettledCount += 1;
+                    }
                 }
             }
 
-            const sum = (fn) => transactions.reduce((s, row) => s + fn(row), 0);
+            for (const receipt of receipts) {
+                if (!byWatav[receipt.vendor_id]) {
+                    byWatav[receipt.vendor_id] = emptyVendor(
+                        receipt.vendor_id,
+                        receipt.vendor?.name || 'Unknown'
+                    );
+                }
+                byWatav[receipt.vendor_id].unallocatedAmount = addAmounts(
+                    byWatav[receipt.vendor_id].unallocatedAmount,
+                    receipt.unallocated_amount || 0
+                );
+            }
+
+            const sum = (fn) => transactions.reduce((s, row) => addAmounts(s, fn(row)), 0);
             const pending = transactions.filter(
-                (r) => r.collectionStatus !== COLLECTION_STATUS.COLLECTED
+                (r) => r.collectionStatus !== SETTLEMENT_STATUS.COMPLETED
             );
             const collected = transactions.filter(
-                (r) => r.collectionStatus === COLLECTION_STATUS.COLLECTED
+                (r) => r.collectionStatus === SETTLEMENT_STATUS.COMPLETED
+            );
+            const partial = transactions.filter(
+                (r) => r.collectionStatus === SETTLEMENT_STATUS.PARTIALLY_SETTLED
             );
             const customerLinked = transactions.filter(
                 (r) => r.entryType === ENTRY_TYPE.CUSTOMER_PAYMENT
@@ -509,48 +649,61 @@ class PaymentInService {
                 totalActualAmount: sum((r) => r.actualAmount),
                 totalVendorCharges: sum((r) => r.vendorCharges),
                 totalNetAmount: sum((r) => r.netAmount),
+                totalReceivable: vendorSummary.totalReceivable,
+                totalSettled: vendorSummary.totalSettled,
+                currentPending: vendorSummary.currentPending,
+                unallocatedAmount: vendorSummary.unallocatedAmount,
+                vendorReceiptsTotal: vendorSummary.totalReceived,
+                partiallySettledCount: vendorSummary.partiallySettledCount,
                 pending: {
                     entries: pending.length,
-                    gross: pending.reduce((s, r) => s + r.receivedAmount, 0),
-                    net: pending.reduce((s, r) => s + r.netAmount, 0),
-                    charges: pending.reduce((s, r) => s + r.vendorCharges, 0),
+                    gross: pending.reduce((s, r) => addAmounts(s, r.remainingAmount), 0),
+                    net: pending.reduce((s, r) => addAmounts(s, r.remainingAmount), 0),
+                    remaining: pending.reduce((s, r) => addAmounts(s, r.remainingAmount), 0),
+                    charges: pending.reduce((s, r) => addAmounts(s, r.vendorCharges), 0),
                     customerLinkedGross: pending
                         .filter((r) => r.entryType === ENTRY_TYPE.CUSTOMER_PAYMENT)
-                        .reduce((s, r) => s + r.receivedAmount, 0),
+                        .reduce((s, r) => addAmounts(s, r.remainingAmount), 0),
                     standaloneGross: pending
                         .filter((r) => r.entryType === ENTRY_TYPE.STANDALONE)
-                        .reduce((s, r) => s + r.receivedAmount, 0),
+                        .reduce((s, r) => addAmounts(s, r.remainingAmount), 0),
                 },
                 collected: {
                     entries: collected.length,
-                    gross: collected.reduce((s, r) => s + r.receivedAmount, 0),
-                    net: collected.reduce((s, r) => s + r.netAmount, 0),
-                    charges: collected.reduce((s, r) => s + r.vendorCharges, 0),
+                    gross: collected.reduce((s, r) => addAmounts(s, r.receivedAmount), 0),
+                    net: collected.reduce((s, r) => addAmounts(s, r.netAmount), 0),
+                    charges: collected.reduce((s, r) => addAmounts(s, r.vendorCharges), 0),
                     customerLinkedGross: collected
                         .filter((r) => r.entryType === ENTRY_TYPE.CUSTOMER_PAYMENT)
-                        .reduce((s, r) => s + r.receivedAmount, 0),
+                        .reduce((s, r) => addAmounts(s, r.receivedAmount), 0),
                     standaloneGross: collected
                         .filter((r) => r.entryType === ENTRY_TYPE.STANDALONE)
-                        .reduce((s, r) => s + r.receivedAmount, 0),
+                        .reduce((s, r) => addAmounts(s, r.receivedAmount), 0),
                 },
                 customerLinked: {
                     entries: customerLinked.length,
-                    gross: customerLinked.reduce((s, r) => s + r.receivedAmount, 0),
-                    net: customerLinked.reduce((s, r) => s + r.netAmount, 0),
-                    charges: customerLinked.reduce((s, r) => s + r.vendorCharges, 0),
+                    gross: customerLinked.reduce((s, r) => addAmounts(s, r.receivedAmount), 0),
+                    net: customerLinked.reduce((s, r) => addAmounts(s, r.netAmount), 0),
+                    charges: customerLinked.reduce((s, r) => addAmounts(s, r.vendorCharges), 0),
                 },
                 standalone: {
                     entries: standalone.length,
-                    gross: standalone.reduce((s, r) => s + r.receivedAmount, 0),
-                    net: standalone.reduce((s, r) => s + r.netAmount, 0),
-                    charges: standalone.reduce((s, r) => s + r.vendorCharges, 0),
+                    gross: standalone.reduce((s, r) => addAmounts(s, r.receivedAmount), 0),
+                    net: standalone.reduce((s, r) => addAmounts(s, r.netAmount), 0),
+                    charges: standalone.reduce((s, r) => addAmounts(s, r.vendorCharges), 0),
+                },
+                partial: {
+                    entries: partial.length,
+                    remaining: partial.reduce((s, r) => addAmounts(s, r.remainingAmount), 0),
+                    settled: partial.reduce((s, r) => addAmounts(s, r.totalSettledAmount), 0),
                 },
             };
 
             return {
                 transactions,
+                receipts,
                 byWatav: Object.values(byWatav).sort(
-                    (a, b) => b.pendingNet - a.pendingNet || b.totalReceived - a.totalReceived
+                    (a, b) => b.currentPending - a.currentPending || b.totalReceivable - a.totalReceivable
                 ),
                 summary,
             };
@@ -565,3 +718,5 @@ module.exports.customerCreditAmount = customerCreditAmount;
 module.exports.PAYMENT_CATEGORY = PAYMENT_CATEGORY;
 module.exports.ENTRY_TYPE = ENTRY_TYPE;
 module.exports.COLLECTION_STATUS = COLLECTION_STATUS;
+module.exports.SETTLEMENT_STATUS = SETTLEMENT_STATUS;
+module.exports.normalizePaymentPayload = normalizePaymentPayload;

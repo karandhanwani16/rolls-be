@@ -48,8 +48,9 @@ model Customer {
   sales_returns         SaleReturn[]
   bill_to_bill_payments BillToBillPayment[]
   // Relations
-  receive_payments      PaymentIn[]         @relation("ReceivePayments")
-  actual_payments       PaymentIn[]         @relation("ActualPayments")
+  receive_payments      PaymentIn[]            @relation("ReceivePayments")
+  actual_payments       PaymentIn[]            @relation("ActualPayments")
+  watav_vendor_receipts WatavVendorReceipt[]   @relation("WatavVendorReceipts")
   transactions          Transaction[]
 
   @@map("customers")
@@ -63,6 +64,7 @@ model Supplier {
   city                 String?       @map("supplier_city")
   opening_balance      Float         @default(0) @map("supplier_opening_balance")
   opening_balance_date DateTime?     @map("supplier_opening_balance_date")
+  credit_days          Int           @default(0) @map("supplier_credit_days")
   created_at           DateTime      @default(now())
   updated_at           DateTime      @default(now()) @updatedAt
   payments_out     PaymentOut[]
@@ -98,21 +100,55 @@ model PaymentIn {
   payment_category   String    @default("NORMAL") @map("payment_category")
   // For VATAV only: CUSTOMER_PAYMENT | STANDALONE
   entry_type         String?   @map("entry_type")
-  // For VATAV only: PENDING | COLLECTED
+  // For VATAV only: PENDING | PARTIALLY_SETTLED | COMPLETED (legacy COLLECTED treated as COMPLETED)
   collection_status  String?   @map("collection_status")
   collection_date    DateTime? @map("collection_date")
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
 
   // Relations
-  receive_customer Customer? @relation("ReceivePayments", fields: [receive_id], references: [id])
-  actual_customer  Customer? @relation("ActualPayments", fields: [actual_id], references: [id])
+  receive_customer   Customer?                    @relation("ReceivePayments", fields: [receive_id], references: [id])
+  actual_customer    Customer?                    @relation("ActualPayments", fields: [actual_id], references: [id])
+  watav_allocations  WatavSettlementAllocation[]
 
   @@index([receive_id])
   @@index([actual_id])
   @@index([payment_category])
   @@index([collection_status])
   @@map("paymentin")
+}
+
+model WatavVendorReceipt {
+  id                 String                      @id @default(cuid()) @map("receipt_id")
+  vendor_id          String                      @map("vendor_id")
+  receipt_date       DateTime                    @map("receipt_date")
+  amount             Float                       @map("receipt_amount")
+  unallocated_amount Float                       @default(0) @map("unallocated_amount")
+  type               String                      @map("receipt_type")
+  reference          String?                     @map("receipt_reference")
+  description        String?                     @map("receipt_description")
+  created_at         DateTime                    @default(now())
+  updated_at         DateTime                    @default(now()) @updatedAt
+  vendor             Customer                    @relation("WatavVendorReceipts", fields: [vendor_id], references: [id])
+  allocations        WatavSettlementAllocation[]
+
+  @@index([vendor_id])
+  @@index([receipt_date])
+  @@map("watav_vendor_receipts")
+}
+
+model WatavSettlementAllocation {
+  id               String             @id @default(cuid()) @map("allocation_id")
+  receipt_id       String             @map("receipt_id")
+  payment_in_id    String             @map("payment_in_id")
+  allocated_amount Float              @map("allocated_amount")
+  created_at       DateTime           @default(now())
+  receipt          WatavVendorReceipt @relation(fields: [receipt_id], references: [id], onDelete: Cascade)
+  payment          PaymentIn          @relation(fields: [payment_in_id], references: [id])
+
+  @@index([receipt_id])
+  @@index([payment_in_id])
+  @@map("watav_settlement_allocations")
 }
 
 model PaymentOut {
@@ -143,6 +179,7 @@ model Purchase {
   transport           String?        @map("purchase_transport")
   transport_charges   Float?         @default(0) @map("purchase_transport_charges")
   discount            Float?         @default(0) @map("purchase_discount")
+  credit_days         Int            @default(0) @map("purchase_credit_days")
   unit                String         @default("m") @map("purchase_unit")
   received_by         String?        @map("purchase_received_by")
   created_at    DateTime       @default(now())
