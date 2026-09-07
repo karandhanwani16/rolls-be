@@ -126,6 +126,19 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <th class="no-right-border">Amount</th>
           </tr>`;
 
+    // Contiguous same-group segments on this page (for rowspan across roll lines)
+    const pageGroupSpans = (lines) => {
+        const spans = new Array(lines.length).fill(0);
+        let i = 0;
+        while (i < lines.length) {
+            let j = i + 1;
+            while (j < lines.length && lines[j].group === lines[i].group) j += 1;
+            spans[i] = j - i;
+            i = j;
+        }
+        return spans;
+    };
+
     const renderItemRows = (lines, { fillPage = false } = {}) => {
         if (!lines.length && !fillPage) {
             return `<tr><td colspan="${colCount}" class="no-right-border" style="padding:20px;text-align:center;">No items</td></tr>`;
@@ -139,44 +152,56 @@ module.exports = (invoiceData, documentType = 'bill') => {
             <td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td>
             <td class="no-right-border"></td>`;
 
+        const spans = pageGroupSpans(lines);
+
         const rows = lines
-            .map((line) => {
-                const { group, rollNo, shade, meters, isFirst, isLast, count } = line;
+            .map((line, idx) => {
+                const { group, rollNo, shade, meters, isLast, count } = line;
                 const qtyHtml = `<div class="qty-line">${meters.toFixed(2)}</div>`;
                 const groupTotalHtml = isLast
                     ? `<div class="qty-rule">________</div><div class="qty-line qty-total">${group.total_mts.toFixed(2)}</div>`
                     : '';
+                const span = spans[idx];
+                const groupMetaCells =
+                    span > 0
+                        ? `<td rowspan="${span}" class="group-meta">${count}</td>
+            <td rowspan="${span}" class="group-meta">${group.name || ''}</td>
+            <td rowspan="${span}" class="group-meta">${group.width || ''}</td>`
+                        : '';
 
                 if (isChallan) {
                     return `
           <tr class="item-row">
-            <td>${isFirst ? count : ''}</td>
-            <td>${isFirst ? group.name || '' : ''}</td>
-            <td>${isFirst ? group.width || '' : ''}</td>
+            ${groupMetaCells}
             <td>${rollNo || '&nbsp;'}</td>
             <td>${shade || '&nbsp;'}</td>
             <td class="qty-cell no-right-border">${qtyHtml}${groupTotalHtml}</td>
           </tr>`;
                 }
 
+                let rateAmountCells = '';
+                if (span > 0) {
+                    const segmentEndsGroup = lines
+                        .slice(idx, idx + span)
+                        .some((l) => l.isLast);
+                    const rateHtml = segmentEndsGroup
+                        ? `<div class="qty-rule">______</div>${group.price || ''}`
+                        : '';
+                    const amountHtml = segmentEndsGroup
+                        ? `<div class="qty-rule">_______</div>${formatCurrency(group.total_amount) || ''}`
+                        : '';
+                    rateAmountCells = `
+            <td rowspan="${span}" class="align-bottom group-meta">${rateHtml}</td>
+            <td rowspan="${span}" class="align-bottom no-right-border text-right group-meta">${amountHtml}</td>`;
+                }
+
                 return `
           <tr class="item-row">
-            <td>${isFirst ? count : ''}</td>
-            <td>${isFirst ? group.name || '' : ''}</td>
-            <td>${isFirst ? group.width || '' : ''}</td>
+            ${groupMetaCells}
             <td>${rollNo || '&nbsp;'}</td>
             <td>${shade || '&nbsp;'}</td>
             <td class="qty-cell">${qtyHtml}${groupTotalHtml}</td>
-            <td class="align-bottom">${
-                isLast
-                    ? `<div class="qty-rule">______</div>${group.price || ''}`
-                    : ''
-            }</td>
-            <td class="align-bottom no-right-border text-right">${
-                isLast
-                    ? `<div class="qty-rule">_______</div>${formatCurrency(group.total_amount) || ''}`
-                    : ''
-            }</td>
+            ${rateAmountCells}
           </tr>`;
             })
             .join('');
@@ -451,6 +476,12 @@ module.exports = (invoiceData, documentType = 'bill') => {
     }
     tbody tr.item-row td {
       border-bottom: none;
+    }
+    td.group-meta {
+      vertical-align: top;
+    }
+    td.group-meta.align-bottom {
+      vertical-align: bottom;
     }
     .no-right-border { border-right: none !important; }
     .bottom-border { border-bottom: 1px solid #000; }
