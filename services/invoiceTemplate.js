@@ -28,7 +28,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
         if (!grouped[key]) {
             grouped[key] = {
                 name: item.name || '',
-                width: item.width,
+                width,
                 unit,
                 price: item.price,
                 roll_nos: [],
@@ -166,7 +166,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
                     span > 0
                         ? `<td rowspan="${span}" class="group-meta">${count}</td>
             <td rowspan="${span}" class="group-meta">${group.name || ''}</td>
-            <td rowspan="${span}" class="group-meta">${group.width || ''}</td>`
+            <td rowspan="${span}" class="group-meta">${(group.width || '').trim() || '-'}</td>`
                         : '';
 
                 if (isChallan) {

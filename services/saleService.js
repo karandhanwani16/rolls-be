@@ -155,6 +155,7 @@ class SaleService {
                     purchase_item_id: item.roll_id || null, // Can be null for custom rolls
                     roll_no: item.roll_no,
                     shade: item.shade || null,
+                    width: item.width ? String(item.width).trim() || null : null,
                     meters: item.meters,
                     unit: billUnit,
                     price: item.price,
@@ -291,6 +292,7 @@ class SaleService {
                     purchase_item_id: item.purchase_item_id || null, // Can be null for custom rolls
                     roll_no: item.roll_no,
                     shade: item.shade || null,
+                    width: item.width ? String(item.width).trim() || null : null,
                     meters: item.meters,
                     unit: billUnit,
                     price: item.price,
@@ -406,16 +408,6 @@ class SaleService {
         try {
             const sale = await this.getSaleById(saleId);
 
-            // Get all unique product_ids from sale items
-            const productIds = sale.items.map(item => item.product_id).filter(Boolean);
-            // Fetch all products in one query
-            const products = await prisma.product.findMany({
-                where: { id: { in: productIds } },
-            });
-            // Map product_id to width
-            const productWidthMap = {};
-            products.forEach(p => { productWidthMap[p.id] = p.width });
-
             const invoiceData = {
                 customer: sale.customer_name,
                 date: format(new Date(sale.date), 'dd/MM/yyyy'),
@@ -424,7 +416,7 @@ class SaleService {
                     name: item.product_name,
                     qty: item.meters,
                     price: item.price,
-                    width: productWidthMap[item.product_id] || '',
+                    width: item.width || '',
                     roll_no: item.roll_no,
                     shade: item.shade || '',
                     mts: item.meters,

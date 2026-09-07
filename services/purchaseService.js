@@ -3,6 +3,25 @@ const prisma = require('../prisma/client');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');
 
+async function syncProductWidthsFromItems(tx, items) {
+    const widthByProduct = new Map();
+    for (const item of items || []) {
+        if (!item.product_id) continue;
+        const width = item.width != null ? String(item.width).trim() : '';
+        if (!width) continue;
+        if (!widthByProduct.has(item.product_id)) {
+            widthByProduct.set(item.product_id, width);
+        }
+    }
+
+    for (const [productId, width] of widthByProduct.entries()) {
+        await tx.product.update({
+            where: { id: productId },
+            data: { width, updated_at: new Date() },
+        });
+    }
+}
+
 class PurchaseService {
     async getAllPurchases(supplierId) {
         return await prisma.purchase.findMany({
@@ -71,6 +90,7 @@ class PurchaseService {
                     product_name: item.product_name,
                     roll_no: item.roll_no,
                     shade: item.shade || null,
+                    width: item.width ? String(item.width).trim() || null : null,
                     meters: item.meters,
                     unit: billUnit,
                     price: item.price,
@@ -83,6 +103,8 @@ class PurchaseService {
                 await prisma.purchaseItem.createMany({
                     data: purchaseItemsData
                 });
+
+                await syncProductWidthsFromItems(prisma, items);
             }
 
             // Create transaction record
@@ -145,6 +167,7 @@ class PurchaseService {
                     product_name: item.product_name,
                     roll_no: item.roll_no,
                     shade: item.shade || null,
+                    width: item.width ? String(item.width).trim() || null : null,
                     meters: item.meters,
                     unit: billUnit,
                     price: item.price,
@@ -157,6 +180,8 @@ class PurchaseService {
                 await prisma.purchaseItem.createMany({
                     data: purchaseItemsData
                 });
+
+                await syncProductWidthsFromItems(prisma, items);
             }
 
             // Create transaction record for the update
