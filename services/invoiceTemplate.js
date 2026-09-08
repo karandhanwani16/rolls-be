@@ -6,6 +6,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
         formatUnitTotalsNumeric,
         sumQuantityByUnit,
     } = require('../utils/quantityUnits');
+    const { sortRollsByShade } = require('../utils/sortRolls');
 
     // Full page of rolls (no summary). Last page leaves room for totals / challan note.
     const ROWS_FULL_PAGE = 24;
@@ -17,7 +18,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const qtyColumnName = unitColumnLabel(documentUnit);
 
     const grouped = {};
-    invoiceData.items.forEach((item) => {
+    (invoiceData.items || []).forEach((item) => {
         const name = `${item.name || ''}`.trim().toLowerCase();
         const width = (item.width || '').trim();
         const unit = normalizeUnit(item.unit);
@@ -45,6 +46,18 @@ module.exports = (invoiceData, documentType = 'bill') => {
         grouped[key].total_amount += parseFloat(item.amount || 0);
     });
     const groupedItems = Object.values(grouped);
+    groupedItems.forEach((group) => {
+        const sorted = sortRollsByShade(
+            group.roll_nos.map((roll_no, i) => ({
+                roll_no,
+                shade: group.shades[i],
+                meters: group.meters[i],
+            }))
+        );
+        group.roll_nos = sorted.map((row) => row.roll_no);
+        group.shades = sorted.map((row) => row.shade);
+        group.meters = sorted.map((row) => row.meters);
+    });
 
     // Flatten to one visual line per roll, keeping group metadata for first/last of group
     const rollLines = [];
