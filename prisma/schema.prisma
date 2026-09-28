@@ -6,9 +6,10 @@ generator client {
 }
 
 datasource db {
-  // Runtime URL is resolved in be/config/database.js:
-  // DATABASE_PATH, else USB_ROOT/data/database.sqlite, else file: DATABASE_URL.
-  provider = "sqlite"
+  // Demo / cloud: provider = "mysql" + DATABASE_URL=mysql://... (Render → Aiven).
+  // USB later: switch provider back to "sqlite" and use DATABASE_PATH / USB_ROOT.
+  // Runtime resolution: be/config/database.js
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 

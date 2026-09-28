@@ -7,20 +7,18 @@ const DEFAULT_USB_ROOT = path.join(REPO_ROOT, "usb-dev");
 /**
  * Single place that decides how this process talks to the database.
  *
- * Phase 4: Prisma provider is sqlite. File location:
- *   {USB_ROOT}/data/database.sqlite
+ * Cloud demo (Vercel + Render + Aiven MySQL):
+ *   Set DATABASE_URL=mysql://... and leave USB_ROOT / DATABASE_PATH unset.
  *
- * Local development uses a project folder as USB_ROOT (not a physical drive):
- *   <repo>/usb-dev/data/database.sqlite
+ * USB / Electron (SQLite) — after demo, switch schema provider back to sqlite:
+ *   Set DATABASE_PATH or USB_ROOT; those win over a leftover server URL.
  *
  * Precedence:
- *   1. DATABASE_PATH (filesystem path or file: URL)
+ *   1. DATABASE_PATH (filesystem path or file: URL) → SQLite file
  *   2. USB_ROOT → {USB_ROOT}/data/database.sqlite
- *   3. file: DATABASE_URL
- *   4. Default USB_ROOT = <repo>/usb-dev
- *
- * Server URLs (mysql://, postgresql://) are ignored so a leftover .env
- * cannot point the sqlite client at MySQL.
+ *   3. DATABASE_URL if mysql:// / postgresql:// → use as-is (Render / Aiven)
+ *   4. DATABASE_URL if file: → SQLite file
+ *   5. Default → <repo>/usb-dev/data/database.sqlite
  */
 function trimEnv(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -75,7 +73,10 @@ function resolveDatabaseUrl(env = process.env) {
   }
 
   const databaseUrl = trimEnv(env.DATABASE_URL);
-  if (databaseUrl && !looksLikeServerUrl(databaseUrl)) {
+  if (databaseUrl) {
+    if (looksLikeServerUrl(databaseUrl)) {
+      return databaseUrl;
+    }
     return databaseUrl.startsWith("file:")
       ? databaseUrlFromPath(databaseUrl)
       : databaseUrlFromPath(databaseUrl);
@@ -92,7 +93,11 @@ function sqliteFilePathFromUrl(url) {
 }
 
 function ensureDatabaseDir(env = process.env) {
-  const filePath = sqliteFilePathFromUrl(resolveDatabaseUrl(env)) || resolveDatabasePath(env);
+  const url = resolveDatabaseUrl(env);
+  if (looksLikeServerUrl(url)) {
+    return "";
+  }
+  const filePath = sqliteFilePathFromUrl(url) || resolveDatabasePath(env);
   if (filePath) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
   }
@@ -107,8 +112,8 @@ function applyDatabaseEnv(env = process.env) {
   if (filePath) {
     env.DATABASE_PATH = filePath;
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    env.USB_ROOT = resolveUsbRoot(env);
   }
-  env.USB_ROOT = resolveUsbRoot(env);
 
   return url;
 }
@@ -133,6 +138,7 @@ module.exports = {
   applyDatabaseEnv,
   describeDatabaseTarget,
   ensureDatabaseDir,
+  looksLikeServerUrl,
   resolveDatabasePath,
   resolveDatabaseUrl,
   resolveUsbRoot,
