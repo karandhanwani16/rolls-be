@@ -6,8 +6,10 @@ generator client {
 }
 
 datasource db {
-  provider  = "mysql"
-  url       = env("DATABASE_URL")
+  // Runtime URL is resolved in be/config/database.js:
+  // DATABASE_PATH, else USB_ROOT/data/database.sqlite, else file: DATABASE_URL.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -190,12 +192,6 @@ model Purchase {
   @@map("purchases")
 }
 
-enum PurchaseItemStatus {
-  UNSOLD
-  SOLD
-  RETURNED
-}
-
 model PurchaseItem {
   id           String             @id @default(uuid()) @map("purchase_items_id")
   purchase     Purchase           @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
@@ -209,7 +205,7 @@ model PurchaseItem {
   unit         String             @default("m") @map("purchase_items_unit")
   price        Float              @map("purchase_items_price")
   total        Float              @map("purchase_items_total")
-  status       PurchaseItemStatus @map("purchase_items_status")
+  status       String             @map("purchase_items_status")
   created_at   DateTime           @default(now())
   updated_at   DateTime           @default(now()) @updatedAt
 

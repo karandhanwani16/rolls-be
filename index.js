@@ -1,4 +1,12 @@
 require('dotenv').config();
+const { applyDatabaseEnv, describeDatabaseTarget } = require('./config/database');
+
+const databaseUrl = applyDatabaseEnv();
+if (!databaseUrl) {
+    console.error('DATABASE_PATH, USB_ROOT, or a file DATABASE_URL is required');
+    process.exit(1);
+}
+
 const express = require('express');
 const cors = require('cors');
 
@@ -36,7 +44,7 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:8080')
 
 app.use(cors({
     origin(origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin || origin === 'null' || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));
@@ -72,7 +80,70 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/stock-report', stockReportRoutes);
-// Start the server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+
+const prisma = require('./prisma/client');
+const { ensureDefaultOwner } = require('./prisma/seed');
+
+let server = null;
+let shuttingDown = false;
+
+function listen() {
+    server = app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+        console.log(`Database: ${describeDatabaseTarget(databaseUrl)}`);
+    });
+}
+
+async function start() {
+    try {
+        await ensureDefaultOwner(prisma);
+    } catch (error) {
+        console.error('Default owner seed failed:', error.message);
+    }
+    listen();
+}
+
+async function gracefulShutdown(signal) {
+    if (shuttingDown) {
+        return;
+    }
+    shuttingDown = true;
+    console.log(`${signal}: stopping HTTP server and disconnecting Prisma`);
+
+    const forceTimer = setTimeout(() => {
+        console.error('Graceful shutdown timed out, exiting');
+        process.exit(1);
+    }, 8000);
+    if (typeof forceTimer.unref === 'function') {
+        forceTimer.unref();
+    }
+
+    if (server) {
+        if (typeof server.closeIdleConnections === 'function') {
+            server.closeIdleConnections();
+        }
+        await new Promise((resolve) => {
+            server.close(() => resolve());
+        });
+        server = null;
+    }
+
+    try {
+        await prisma.$disconnect();
+        console.log('Prisma disconnected');
+    } catch (error) {
+        console.error('Prisma disconnect failed:', error);
+    }
+
+    clearTimeout(forceTimer);
+    process.exit(0);
+}
+
+process.on('SIGTERM', () => {
+    gracefulShutdown('SIGTERM');
 });
+process.on('SIGINT', () => {
+    gracefulShutdown('SIGINT');
+});
+
+start();

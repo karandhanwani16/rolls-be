@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../prisma/client');
 const { generatePDF } = require('../utils/pdfGenerator');
 const { generateCSV } = require('../utils/csvGenerator');
 const { generateExcel } = require('../utils/excelGenerator');

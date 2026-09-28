@@ -1,6 +1,6 @@
 const prisma = require('../prisma/client');
 const { format } = require('date-fns');
-const { PurchaseItemStatus } = require('@prisma/client');
+const { PurchaseItemStatus } = require('../utils/purchaseItemStatus');
 const puppeteer = require('puppeteer');
 const invoiceTemplate = require('./invoiceTemplate');
 const transactionService = require('./transactions');

@@ -1,4 +1,4 @@
-const { PurchaseItemStatus } = require('@prisma/client');
+const { PurchaseItemStatus } = require('../utils/purchaseItemStatus');
 const prisma = require('../prisma/client');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');

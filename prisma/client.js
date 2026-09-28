@@ -1,3 +1,7 @@
+require('dotenv').config();
+const { applyDatabaseEnv } = require('../config/database');
+
+applyDatabaseEnv();
 
 const { PrismaClient } = require('@prisma/client');
 

@@ -1,5 +1,5 @@
 process.env.DATABASE_URL =
-    process.env.DATABASE_URL || 'mysql://user:pass@127.0.0.1:3306/watav_test';
+    process.env.DATABASE_URL || 'file:./watav_test.sqlite';
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');

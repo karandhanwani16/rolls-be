@@ -1,8 +1,7 @@
 const billToBillPaymentService = require('../services/billToBillPaymentService');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../prisma/client');
 // const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
-const prisma = new PrismaClient();
 
 class BillToBillPaymentController {
     async getCustomerBillPayments(req, res) {
