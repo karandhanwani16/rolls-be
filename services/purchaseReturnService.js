@@ -1,25 +1,26 @@
 const prisma = require('../prisma/client');
-const { PurchaseItemStatus } = require('../utils/purchaseItemStatus');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');
+const {
+    applyPurchaseReturnStock,
+    revertPurchaseReturnStock,
+} = require('../utils/purchaseReturnStock');
 
 const returnedItems = (items = []) =>
     (items || []).filter((item) => parseFloat(item.meters) > 0);
 
-const fullReturnStockIds = async (tx, items = []) => {
-    const ids = [];
-    for (const item of items) {
-        const id = item.purchase_item_id || item.roll_id;
-        const meters = parseFloat(item.meters) || 0;
-        if (!id || meters <= 0) continue;
-        const original = await tx.purchaseItem.findUnique({ where: { id } });
-        const originalMeters = original?.meters || 0;
-        if (originalMeters > 0 && meters + 0.0001 >= originalMeters) {
-            ids.push(id);
-        }
-    }
-    return ids;
-};
+const mapReturnItems = (purchaseReturnId, items) =>
+    items.map((item) => ({
+        purchase_return_id: purchaseReturnId,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        purchase_item_id: item.purchase_item_id || item.roll_id || null,
+        roll_no: item.roll_no,
+        meters: item.meters,
+        unit: normalizeUnit(item.unit),
+        price: item.price,
+        total: item.total_price,
+    }));
 
 const nextNumber = async (date) => {
     const now = new Date(date);
@@ -82,27 +83,11 @@ class PurchaseReturnService {
                 }
             });
 
-            const ids = await fullReturnStockIds(tx, items);
-            if (ids.length > 0) {
-                await tx.purchaseItem.updateMany({
-                    where: { id: { in: ids } },
-                    data: { status: PurchaseItemStatus.RETURNED }
-                });
-            }
+            await applyPurchaseReturnStock(tx, items, details.purchase_id || null);
 
             if (items && items.length > 0) {
                 await tx.purchaseReturnItem.createMany({
-                    data: items.map((item) => ({
-                        purchase_return_id: purchaseReturn.id,
-                        product_id: item.product_id,
-                        product_name: item.product_name,
-                        purchase_item_id: item.purchase_item_id || item.roll_id || null,
-                        roll_no: item.roll_no,
-                        meters: item.meters,
-                        unit: normalizeUnit(item.unit),
-                        price: item.price,
-                        total: item.total_price
-                    }))
+                    data: mapReturnItems(purchaseReturn.id, items),
                 });
             }
 
@@ -138,15 +123,7 @@ class PurchaseReturnService {
             });
             if (!existing) throw new Error('Purchase return not found');
 
-            const existingIds = existing.items
-                .filter((item) => item.purchase_item_id)
-                .map((item) => item.purchase_item_id);
-            if (existingIds.length > 0) {
-                await tx.purchaseItem.updateMany({
-                    where: { id: { in: existingIds } },
-                    data: { status: PurchaseItemStatus.UNSOLD }
-                });
-            }
+            await revertPurchaseReturnStock(tx, existing.items);
 
             const purchaseReturn = await tx.purchaseReturn.update({
                 where: { id },
@@ -164,27 +141,11 @@ class PurchaseReturnService {
 
             await tx.purchaseReturnItem.deleteMany({ where: { purchase_return_id: id } });
 
-            const ids = await fullReturnStockIds(tx, items);
-            if (ids.length > 0) {
-                await tx.purchaseItem.updateMany({
-                    where: { id: { in: ids } },
-                    data: { status: PurchaseItemStatus.RETURNED }
-                });
-            }
+            await applyPurchaseReturnStock(tx, items, details.purchase_id || null);
 
             if (items && items.length > 0) {
                 await tx.purchaseReturnItem.createMany({
-                    data: items.map((item) => ({
-                        purchase_return_id: purchaseReturn.id,
-                        product_id: item.product_id,
-                        product_name: item.product_name,
-                        purchase_item_id: item.purchase_item_id || item.roll_id || null,
-                        roll_no: item.roll_no,
-                        meters: item.meters,
-                        unit: normalizeUnit(item.unit),
-                        price: item.price,
-                        total: item.total_price
-                    }))
+                    data: mapReturnItems(purchaseReturn.id, items),
                 });
             }
 
@@ -210,17 +171,11 @@ class PurchaseReturnService {
         });
         if (!existing) throw new Error('Purchase return not found');
 
-        const ids = existing.items
-            .filter((item) => item.purchase_item_id)
-            .map((item) => item.purchase_item_id);
-        if (ids.length > 0) {
-            await prisma.purchaseItem.updateMany({
-                where: { id: { in: ids } },
-                data: { status: PurchaseItemStatus.UNSOLD }
-            });
-        }
-
-        await prisma.purchaseReturnItem.deleteMany({ where: { purchase_return_id: id } });
+        await prisma.$transaction(async (tx) => {
+            await revertPurchaseReturnStock(tx, existing.items);
+            await tx.purchaseReturnItem.deleteMany({ where: { purchase_return_id: id } });
+            await tx.purchaseReturn.delete({ where: { id } });
+        });
         await transactionService.createTransactionRecord(
             'outgoing',
             `Purchase return deleted ${existing.return_no} to ${existing.supplier_name}`,
@@ -228,7 +183,6 @@ class PurchaseReturnService {
             existing.supplier_id,
             existing.total
         );
-        await prisma.purchaseReturn.delete({ where: { id } });
         return { message: 'Purchase return deleted successfully' };
     }
 }

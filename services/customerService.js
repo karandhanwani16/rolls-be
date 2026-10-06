@@ -69,12 +69,12 @@ class CustomerService {
             : `Payment from ${payment.actual_customer?.name || 'Unknown'}`;
         const particulars =
             discount > 0
-                ? `${baseLabel} (incl. discount ₹${discount.toLocaleString('en-IN')})`
+                ? `${baseLabel} (incl. discount Rs. ${discount.toLocaleString('en-IN')})`
                 : baseLabel;
         return {
             date: payment.payment_date,
             particulars,
-            voucherNo: payment.id,
+            voucherNo: '-',
             debit: 0,
             // Customer credit = received/gross + discount (charges do not reduce this)
             credit,
