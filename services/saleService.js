@@ -5,31 +5,55 @@ const puppeteer = require('puppeteer');
 const invoiceTemplate = require('./invoiceTemplate');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');
-const { getDueDate, getOverdueDays } = require('../utils/creditDays');
+const {
+    allocateSaleOutstanding,
+    attachSaleOutstanding,
+} = require('../utils/saleOutstanding');
 
+const customerPaymentFilter = {
+    NOT: {
+        payment_category: 'VATAV',
+        entry_type: 'STANDALONE',
+    },
+};
 
 class SaleService {
-    enrichSaleWithPaymentStatus(sale) {
-        const clearedAmount = (sale.bill_payments || []).reduce(
-            (total, payment) => total + (payment.cleared_amount || 0),
-            0
-        );
-        const remainingAmount = Math.max(0, (sale.total || 0) - clearedAmount);
-        let payment_status = 'UNPAID';
-        if (clearedAmount >= sale.total) {
-            payment_status = 'FULL';
-        } else if (clearedAmount > 0) {
-            payment_status = 'PARTIAL';
+    async enrichSalesWithPaymentStatus(sales) {
+        if (!sales || sales.length === 0) {
+            return sales || [];
         }
 
-        return {
-            ...sale,
-            cleared_amount: clearedAmount,
-            remaining_amount: remainingAmount,
-            payment_status,
-            due_date: getDueDate(sale.date, sale.credit_days || 0),
-            overdue_days: getOverdueDays(sale.date, sale.credit_days || 0, remainingAmount),
-        };
+        const customerIds = [...new Set(sales.map((sale) => sale.customer_id))];
+        const [allSales, payments, saleReturns, customers] = await Promise.all([
+            prisma.sale.findMany({
+                where: { customer_id: { in: customerIds } },
+                orderBy: [{ date: 'asc' }, { created_at: 'asc' }],
+            }),
+            prisma.paymentIn.findMany({
+                where: {
+                    actual_id: { in: customerIds },
+                    ...customerPaymentFilter,
+                },
+                orderBy: [{ payment_date: 'asc' }, { created_at: 'asc' }],
+            }),
+            prisma.saleReturn.findMany({
+                where: { customer_id: { in: customerIds } },
+            }),
+            prisma.customer.findMany({
+                where: { id: { in: customerIds } },
+            }),
+        ]);
+
+        const remainingById = allocateSaleOutstanding({
+            sales: allSales,
+            payments,
+            saleReturns,
+            customers,
+        });
+
+        return sales.map((sale) =>
+            attachSaleOutstanding(sale, remainingById.get(sale.id))
+        );
     }
 
     async getAllSales(customerId) {
@@ -38,13 +62,12 @@ class SaleService {
             include: {
                 customer: true,
                 items: true,
-                bill_payments: true,
             },
             orderBy: {
                 created_at: 'desc'
             }
         });
-        return sales.map((sale) => this.enrichSaleWithPaymentStatus(sale));
+        return this.enrichSalesWithPaymentStatus(sales);
     }
 
     async getSaleById(id) {
@@ -54,7 +77,6 @@ class SaleService {
                 customer: true,
                 items: true,
                 godown: true,
-                bill_payments: true,
             }
         });
 
@@ -62,7 +84,8 @@ class SaleService {
             throw new Error('Sale not found');
         }
 
-        return this.enrichSaleWithPaymentStatus(sale);
+        const [enriched] = await this.enrichSalesWithPaymentStatus([sale]);
+        return enriched;
     }
 
     async getNextSalesNumber(date) {

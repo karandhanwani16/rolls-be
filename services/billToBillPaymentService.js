@@ -1,6 +1,15 @@
 const prisma = require('../prisma/client');
-const { format } = require('date-fns');
-const { getDueDate, getOverdueDays } = require('../utils/creditDays');
+const {
+    allocateSaleOutstanding,
+    attachSaleOutstanding,
+} = require('../utils/saleOutstanding');
+
+const customerPaymentFilter = {
+    NOT: {
+        payment_category: 'VATAV',
+        entry_type: 'STANDALONE',
+    },
+};
 
 class BillToBillPaymentService {
     async getCustomerBillPayments(customerId) {
@@ -33,24 +42,25 @@ class BillToBillPaymentService {
                 orderBy: { bill_latest_clear_date: 'desc' }
             });
 
-            // Get all sales for this customer
-            const customerSales = await prisma.sale.findMany({
-                where: { customer_id: customerId },
-                orderBy: { date: 'asc' },
-                include: { bill_payments: true }
-            });
-
-            // Customer-linked payments only (exclude standalone watav vendor entries)
-            let paymentsIn = await prisma.paymentIn.findMany({
-                where: {
-                    actual_id: customerId,
-                    NOT: {
-                        payment_category: 'VATAV',
-                        entry_type: 'STANDALONE',
+            const [customer, customerSales, customerReturns, allCustomerPayments] = await Promise.all([
+                prisma.customer.findUnique({ where: { id: customerId } }),
+                prisma.sale.findMany({
+                    where: { customer_id: customerId },
+                    orderBy: { date: 'asc' },
+                }),
+                prisma.saleReturn.findMany({
+                    where: { customer_id: customerId },
+                }),
+                prisma.paymentIn.findMany({
+                    where: {
+                        actual_id: customerId,
+                        ...customerPaymentFilter,
                     },
-                },
-                orderBy: { created_at: 'asc' }
-            });
+                    orderBy: { created_at: 'asc' },
+                }),
+            ]);
+
+            let paymentsIn = [...allCustomerPayments];
 
             let billOverflowAmount = 0;
             let startDate = new Date(0); // Default to beginning of time
@@ -65,36 +75,26 @@ class BillToBillPaymentService {
                 );
             }
 
-            // Process each sale and determine its payment status
-            const salesWithStatus = customerSales.map(sale => {
-                // Calculate total cleared amount for this sale from existing bill payments
-                const clearedAmount = sale.bill_payments.reduce(
-                    (total, payment) => total + payment.cleared_amount,
-                    0
-                );
+            const remainingById = allocateSaleOutstanding({
+                sales: customerSales,
+                payments: allCustomerPayments,
+                saleReturns: customerReturns,
+                customers: customer ? [customer] : [],
+            });
 
-                let status = "UNPAID";
-                if (clearedAmount >= sale.total) {
-                    status = "FULL";
-                } else if (clearedAmount > 0) {
-                    status = "PARTIAL";
-                }
-
+            const salesWithStatus = customerSales.map((sale) => {
+                const enriched = attachSaleOutstanding(sale, remainingById.get(sale.id));
                 return {
                     id: sale.id,
                     sales_no: sale.sales_no,
                     date: sale.date,
                     total: sale.total,
                     credit_days: sale.credit_days || 0,
-                    cleared_amount: clearedAmount,
-                    remaining_amount: sale.total - clearedAmount,
-                    due_date: getDueDate(sale.date, sale.credit_days || 0),
-                    overdue_days: getOverdueDays(
-                        sale.date,
-                        sale.credit_days || 0,
-                        sale.total - clearedAmount
-                    ),
-                    status
+                    cleared_amount: enriched.cleared_amount,
+                    remaining_amount: enriched.remaining_amount,
+                    due_date: enriched.due_date,
+                    overdue_days: enriched.overdue_days,
+                    status: enriched.payment_status,
                 };
             });
 
