@@ -22,7 +22,8 @@ function isCustomerLedgerPayment(payment) {
 /**
  * FIFO-allocate customer payments-in and unlinked sale returns against each
  * customer's sales. Opening balance is settled first so sale outstanding is not
- * understated. Linked returns reduce that sale before allocation.
+ * understated. Linked returns reduce that sale before allocation. Payments with
+ * sale_id are applied to that bill first; any leftover joins the FIFO pool.
  *
  * Returns Map<saleId, { remaining_amount, cleared_amount, payment_status }>
  */
@@ -98,14 +99,33 @@ function allocateSaleOutstanding({ sales, payments, saleReturns, customers }) {
             }
         }
 
-        const credits = [
-            ...(paymentsByCustomer.get(customerId) || []).map((payment) => ({
-                amount: round2(customerCreditAmount(payment)),
-                date: payment.payment_date || payment.created_at,
-                created_at: payment.created_at,
-            })),
-            ...linkedReturnLeftover,
-        ]
+        const fifoCredits = [];
+        for (const payment of paymentsByCustomer.get(customerId) || []) {
+            const amount = round2(customerCreditAmount(payment));
+            if (!amount) continue;
+
+            if (payment.sale_id && remainingById.has(payment.sale_id)) {
+                const current = remainingById.get(payment.sale_id);
+                const applied = Math.min(current.remaining_amount, amount);
+                current.remaining_amount = round2(current.remaining_amount - applied);
+                const leftover = round2(amount - applied);
+                if (leftover > 0) {
+                    fifoCredits.push({
+                        amount: leftover,
+                        date: payment.payment_date || payment.created_at,
+                        created_at: payment.created_at,
+                    });
+                }
+            } else {
+                fifoCredits.push({
+                    amount,
+                    date: payment.payment_date || payment.created_at,
+                    created_at: payment.created_at,
+                });
+            }
+        }
+
+        const credits = [...fifoCredits, ...linkedReturnLeftover]
             .filter((credit) => credit.amount > 0)
             .sort((a, b) => eventTime(a.date, a.created_at) - eventTime(b.date, b.created_at));
 

@@ -73,6 +73,7 @@ model Supplier {
   payments_out     PaymentOut[]
   purchases        Purchase[]
   purchase_returns PurchaseReturn[]
+  bill_to_bill_payments SupplierBillToBillPayment[]
   transactions     Transaction[]
 
   @@map("suppliers")
@@ -99,6 +100,9 @@ model PaymentIn {
   discount           Float?    @default(0) @map("payment_discount") // Settles extra on customer books; cash still = received
   type               String    // Instrument: cash / cheque / bank_transfer / upi / other
   description        String?
+  // When set, this payment is a full bill payment against that sale and is
+  // excluded from the bill-to-bill settlement/reconciliation payment pool.
+  sale_id            String?   @map("sale_id")
   // NORMAL | VATAV — separates normal payments from watav money flows
   payment_category   String    @default("NORMAL") @map("payment_category")
   // For VATAV only: CUSTOMER_PAYMENT | STANDALONE
@@ -112,10 +116,12 @@ model PaymentIn {
   // Relations
   receive_customer   Customer?                    @relation("ReceivePayments", fields: [receive_id], references: [id])
   actual_customer    Customer?                    @relation("ActualPayments", fields: [actual_id], references: [id])
+  sale               Sale?                        @relation("SaleBillPayments", fields: [sale_id], references: [id])
   watav_allocations  WatavSettlementAllocation[]
 
   @@index([receive_id])
   @@index([actual_id])
+  @@index([sale_id])
   @@index([payment_category])
   @@index([collection_status])
   @@map("paymentin")
@@ -163,9 +169,15 @@ model PaymentOut {
   description  String?   @map("payment_out_description")
   type         String    @map("payment_out_type")
   cheque_date  DateTime? @map("payment_out_cheque_date")
+  // When set, this payment is a full bill payment against that purchase and is
+  // excluded from the supplier bill-to-bill settlement/reconciliation payment pool.
+  purchase_id  String?   @map("purchase_id")
   created_at   DateTime  @default(now())
   updated_at   DateTime  @default(now()) @updatedAt
 
+  purchase     Purchase? @relation("PurchaseBillPayments", fields: [purchase_id], references: [id])
+
+  @@index([purchase_id])
   @@map("payments_out")
 }
 
@@ -189,6 +201,8 @@ model Purchase {
   updated_at    DateTime       @default(now()) @updatedAt
   items         PurchaseItem[]
   purchase_returns PurchaseReturn[]
+  bill_linked_payments PaymentOut[] @relation("PurchaseBillPayments")
+  bill_payments SupplierBillToBillPaymentDetail[]
 
   @@map("purchases")
 }
@@ -236,6 +250,7 @@ model Sale {
   updated_at    DateTime                  @default(now()) @updatedAt
   items         SaleItem[]
   bill_payments BillToBillPaymentDetail[]
+  bill_linked_payments PaymentIn[] @relation("SaleBillPayments")
   sale_returns  SaleReturn[]
 
   @@map("sales")
@@ -376,6 +391,49 @@ model BillSettlement {
   updated_at      DateTime          @default(now()) @updatedAt
 
   @@map("bill_settlements")
+}
+
+model SupplierBillToBillPayment {
+  id                     String                            @id @default(uuid()) @map("supplier_bill_to_bill_payment_id")
+  supplier               Supplier                          @relation(fields: [supplier_id], references: [id])
+  supplier_id            String                            @map("supplier_id")
+  bill_clear_date        DateTime                          @map("bill_clear_date")
+  bill_overflow_amount   Float                             @default(0) @map("bill_overflow_amount")
+  bill_latest_clear_date DateTime                          @map("bill_latest_clear_date")
+  created_at             DateTime                          @default(now())
+  updated_at             DateTime                          @default(now()) @updatedAt
+  details                SupplierBillToBillPaymentDetail[]
+  settlements            SupplierBillSettlement[]
+
+  @@map("supplier_bill_to_bill_payments")
+}
+
+model SupplierBillToBillPaymentDetail {
+  id              String                    @id @default(uuid()) @map("supplier_bill_detail_id")
+  bill_payment    SupplierBillToBillPayment @relation(fields: [bill_payment_id], references: [id], onDelete: Cascade)
+  bill_payment_id String                    @map("bill_payment_id")
+  purchase        Purchase                  @relation(fields: [purchase_id], references: [id])
+  purchase_id     String                    @map("purchase_id")
+  cleared_amount  Float                     @map("cleared_amount")
+  status          String                    @map("payment_status") // "FULL", "PARTIAL"
+  created_at      DateTime                  @default(now())
+  updated_at      DateTime                  @default(now()) @updatedAt
+
+  @@map("supplier_bill_to_bill_payment_details")
+}
+
+model SupplierBillSettlement {
+  id              String                    @id @default(uuid()) @map("supplier_settlement_id")
+  bill_payment    SupplierBillToBillPayment @relation(fields: [bill_payment_id], references: [id], onDelete: Cascade)
+  bill_payment_id String                    @map("bill_payment_id")
+  settlement_date DateTime                  @map("settlement_date")
+  total_amount    Float                     @map("total_amount")
+  overflow_amount Float                     @default(0) @map("overflow_amount")
+  description     String?                   @map("settlement_description")
+  created_at      DateTime                  @default(now())
+  updated_at      DateTime                  @default(now()) @updatedAt
+
+  @@map("supplier_bill_settlements")
 }
 
 model Product {

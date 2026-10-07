@@ -74,6 +74,7 @@ function normalizePaymentPayload(paymentInData, { isCreate = false, existing = n
         if (!customerId) {
             throw new Error('Customer is required for a normal payment');
         }
+        const saleId = paymentInData.sale_id || null;
         return {
             payment_category: PAYMENT_CATEGORY.NORMAL,
             entry_type: null,
@@ -88,6 +89,7 @@ function normalizePaymentPayload(paymentInData, { isCreate = false, existing = n
             type: paymentInData.type,
             description: paymentInData.description || '',
             payment_date: paymentInData.payment_date,
+            sale_id: saleId,
         };
     }
 
@@ -139,6 +141,9 @@ function normalizePaymentPayload(paymentInData, { isCreate = false, existing = n
         }
     }
 
+    const saleId =
+        entryType === ENTRY_TYPE.CUSTOMER_PAYMENT ? paymentInData.sale_id || null : null;
+
     return {
         payment_category: PAYMENT_CATEGORY.VATAV,
         entry_type: entryType,
@@ -153,6 +158,7 @@ function normalizePaymentPayload(paymentInData, { isCreate = false, existing = n
         type: paymentInData.type || 'other',
         description: paymentInData.description || '',
         payment_date: paymentInData.payment_date,
+        sale_id: saleId,
     };
 }
 
@@ -175,7 +181,70 @@ function paymentCreateData(normalized) {
         ...(normalized.actual_id
             ? { actual_customer: { connect: { id: normalized.actual_id } } }
             : {}),
+        ...(normalized.sale_id
+            ? { sale: { connect: { id: normalized.sale_id } } }
+            : {}),
     };
+}
+
+async function validateSaleBillLink({ saleId, customerId, creditAmount, excludePaymentId = null }) {
+    if (!saleId) return;
+
+    if (!customerId) {
+        throw new Error('Customer is required for a full bill payment');
+    }
+
+    const sale = await prisma.sale.findUnique({ where: { id: saleId } });
+    if (!sale) {
+        throw new Error('Sale bill not found');
+    }
+    if (sale.customer_id !== customerId) {
+        throw new Error('Selected bill does not belong to this customer');
+    }
+
+    const existingLink = await prisma.paymentIn.findFirst({
+        where: {
+            sale_id: saleId,
+            ...(excludePaymentId ? { id: { not: excludePaymentId } } : {}),
+        },
+    });
+    if (existingLink) {
+        throw new Error('This bill already has a full bill payment');
+    }
+
+    const { allocateSaleOutstanding } = require('../utils/saleOutstanding');
+    const [sales, payments, saleReturns, customer] = await Promise.all([
+        prisma.sale.findMany({ where: { customer_id: customerId } }),
+        prisma.paymentIn.findMany({
+            where: {
+                actual_id: customerId,
+                NOT: {
+                    payment_category: PAYMENT_CATEGORY.VATAV,
+                    entry_type: ENTRY_TYPE.STANDALONE,
+                },
+                ...(excludePaymentId ? { id: { not: excludePaymentId } } : {}),
+            },
+        }),
+        prisma.saleReturn.findMany({ where: { customer_id: customerId } }),
+        prisma.customer.findUnique({ where: { id: customerId } }),
+    ]);
+
+    const remainingById = allocateSaleOutstanding({
+        sales,
+        payments,
+        saleReturns,
+        customers: customer ? [customer] : [],
+    });
+    const remaining =
+        remainingById.get(saleId)?.remaining_amount ?? (Number(sale.total) || 0);
+    if (remaining <= 0) {
+        throw new Error('Selected bill is already fully paid');
+    }
+    if (compareAmounts(creditAmount, remaining) < 0) {
+        throw new Error(
+            `Full bill payment must cover the remaining amount of ${remaining.toFixed(2)}`
+        );
+    }
 }
 
 function mapWatavReportRow(payment, index) {
@@ -255,6 +324,12 @@ class PaymentInService {
     async createPaymentIn(paymentInData) {
         try {
             const normalized = normalizePaymentPayload(paymentInData, { isCreate: true });
+            const creditPreview = customerCreditAmount(normalized);
+            await validateSaleBillLink({
+                saleId: normalized.sale_id,
+                customerId: normalized.actual_id,
+                creditAmount: creditPreview,
+            });
 
             const newPaymentIn = await prisma.paymentIn.create({
                 data: paymentCreateData(normalized),
@@ -263,10 +338,13 @@ class PaymentInService {
 
             const credit = customerCreditAmount(newPaymentIn);
             if (credit > 0 && newPaymentIn.actual_id) {
+                const billLabel = newPaymentIn.sale?.sales_no
+                    ? ` for bill ${newPaymentIn.sale.sales_no}`
+                    : '';
                 const label =
                     newPaymentIn.payment_category === PAYMENT_CATEGORY.VATAV
-                        ? `Watav payment from ${newPaymentIn.actual_customer?.name || 'Customer'}`
-                        : `Payment received from ${newPaymentIn.actual_customer?.name || 'Customer'}`;
+                        ? `Watav payment from ${newPaymentIn.actual_customer?.name || 'Customer'}${billLabel}`
+                        : `Payment received from ${newPaymentIn.actual_customer?.name || 'Customer'}${billLabel}`;
                 await transactionService.createTransactionRecord(
                     'incoming',
                     label,
@@ -308,6 +386,13 @@ class PaymentInService {
                 throw new Error('Cannot convert a settled Watav payment to a normal payment');
             }
 
+            await validateSaleBillLink({
+                saleId: normalized.sale_id,
+                customerId: normalized.actual_id,
+                creditAmount: customerCreditAmount(normalized),
+                excludePaymentId: id,
+            });
+
             const updatedPaymentIn = await prisma.paymentIn.update({
                 where: { id },
                 data: {
@@ -324,6 +409,7 @@ class PaymentInService {
                     collection_date: normalized.collection_date,
                     receive_id: normalized.receive_id,
                     actual_id: normalized.actual_id,
+                    sale_id: normalized.sale_id || null,
                 },
                 include: PAYMENT_INCLUDE,
             });

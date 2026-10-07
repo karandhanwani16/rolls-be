@@ -27,6 +27,9 @@ const ALLOCATION_INCLUDE = {
 const PAYMENT_INCLUDE = {
     receive_customer: true,
     actual_customer: true,
+    sale: {
+        select: { id: true, sales_no: true, total: true, date: true },
+    },
     watav_allocations: {
         include: {
             receipt: true,

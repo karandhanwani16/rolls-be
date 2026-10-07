@@ -57,10 +57,16 @@ class BillToBillPaymentService {
                         ...customerPaymentFilter,
                     },
                     orderBy: { created_at: 'asc' },
+                    include: {
+                        sale: {
+                            select: { id: true, sales_no: true },
+                        },
+                    },
                 }),
             ]);
 
-            let paymentsIn = [...allCustomerPayments];
+            // Settlement/reconciliation pool excludes full-bill payments linked to a sale.
+            let paymentsIn = allCustomerPayments.filter((payment) => !payment.sale_id);
 
             let billOverflowAmount = 0;
             let startDate = new Date(0); // Default to beginning of time
@@ -82,8 +88,15 @@ class BillToBillPaymentService {
                 customers: customer ? [customer] : [],
             });
 
+            const billPaidSaleIds = new Set(
+                allCustomerPayments
+                    .filter((payment) => payment.sale_id)
+                    .map((payment) => payment.sale_id)
+            );
+
             const salesWithStatus = customerSales.map((sale) => {
                 const enriched = attachSaleOutstanding(sale, remainingById.get(sale.id));
+                const isBillPaid = billPaidSaleIds.has(sale.id);
                 return {
                     id: sale.id,
                     sales_no: sale.sales_no,
@@ -95,6 +108,8 @@ class BillToBillPaymentService {
                     due_date: enriched.due_date,
                     overdue_days: enriched.overdue_days,
                     status: enriched.payment_status,
+                    is_bill_paid: isBillPaid,
+                    payment_source: isBillPaid ? 'BILL_PAYMENT' : 'SETTLEMENT',
                 };
             });
 

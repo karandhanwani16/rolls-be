@@ -14,6 +14,7 @@ function eventTime(date, createdAt) {
  * FIFO-allocate payments-out and unlinked purchase returns against each
  * supplier's bills. Opening balance is settled first so purchase outstanding
  * is not understated. Linked returns reduce that purchase before allocation.
+ * Payments with purchase_id are applied to that bill first; leftover joins FIFO.
  *
  * Returns Map<purchaseId, { remaining_amount, cleared_amount, payment_status }>
  */
@@ -88,14 +89,33 @@ function allocatePurchaseOutstanding({ purchases, payments, purchaseReturns, sup
             }
         }
 
-        const credits = [
-            ...(paymentsBySupplier.get(supplierId) || []).map((payment) => ({
-                amount: round2(payment.amount),
-                date: payment.payment_date,
-                created_at: payment.created_at,
-            })),
-            ...linkedReturnLeftover,
-        ]
+        const fifoCredits = [];
+        for (const payment of paymentsBySupplier.get(supplierId) || []) {
+            const amount = round2(payment.amount);
+            if (!amount) continue;
+
+            if (payment.purchase_id && remainingById.has(payment.purchase_id)) {
+                const current = remainingById.get(payment.purchase_id);
+                const applied = Math.min(current.remaining_amount, amount);
+                current.remaining_amount = round2(current.remaining_amount - applied);
+                const leftover = round2(amount - applied);
+                if (leftover > 0) {
+                    fifoCredits.push({
+                        amount: leftover,
+                        date: payment.payment_date,
+                        created_at: payment.created_at,
+                    });
+                }
+            } else {
+                fifoCredits.push({
+                    amount,
+                    date: payment.payment_date,
+                    created_at: payment.created_at,
+                });
+            }
+        }
+
+        const credits = [...fifoCredits, ...linkedReturnLeftover]
             .filter((credit) => credit.amount > 0)
             .sort((a, b) => eventTime(a.date, a.created_at) - eventTime(b.date, b.created_at));
 

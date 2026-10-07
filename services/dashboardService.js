@@ -102,7 +102,7 @@ class DashboardService {
             take: 5
         });
 
-        // Get pending payments
+        // Get pending payments (exclude settlement FULL and direct full-bill payments)
         const pendingPayments = await prisma.sale.findMany({
             where: {
                 date: {
@@ -113,7 +113,10 @@ class DashboardService {
                     none: {
                         status: 'FULL'
                     }
-                }
+                },
+                bill_linked_payments: {
+                    none: {},
+                },
             },
             include: {
                 customer: true,
