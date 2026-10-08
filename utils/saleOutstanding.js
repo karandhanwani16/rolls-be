@@ -1,4 +1,4 @@
-const { getDueDate, getOverdueDays } = require('./creditDays');
+const { getDueDate, getElapsedDays, getOverdueDays } = require('./creditDays');
 const { customerCreditAmount } = require('../services/paymentInService');
 
 function round2(value) {
@@ -176,6 +176,7 @@ function attachSaleOutstanding(sale, allocation) {
         remaining_amount: remainingAmount,
         payment_status: paymentStatus,
         due_date: getDueDate(sale.date, sale.credit_days || 0),
+        elapsed_days: getElapsedDays(sale.date),
         overdue_days: getOverdueDays(
             sale.date,
             sale.credit_days || 0,

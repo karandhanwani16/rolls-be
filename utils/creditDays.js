@@ -4,6 +4,9 @@
  * Viewed on 2 Feb with unpaid balance → overdue_days = 3.
  *
  * credit_days = 0 → due on sale date; overdue starts the next calendar day.
+ *
+ * elapsed_days = calendar days since the bill date (sale/purchase created).
+ * Sale 1 Jan viewed on 3 Jan → 2; viewed on 15 Feb → 45.
  */
 function startOfUtcDay(date) {
     const d = new Date(date);
@@ -28,6 +31,11 @@ function getDueDate(saleDate, creditDays) {
     return addDaysUtc(saleDate, Math.max(days - 1, 0));
 }
 
+function getElapsedDays(saleDate, asOfDate = new Date()) {
+    if (!saleDate) return 0;
+    return Math.max(0, calendarDaysBetween(saleDate, asOfDate));
+}
+
 function getOverdueDays(saleDate, creditDays, remainingAmount, asOfDate = new Date()) {
     if (!remainingAmount || remainingAmount <= 0) return 0;
     const dueDate = getDueDate(saleDate, creditDays);
@@ -36,6 +44,7 @@ function getOverdueDays(saleDate, creditDays, remainingAmount, asOfDate = new Da
 
 module.exports = {
     getDueDate,
+    getElapsedDays,
     getOverdueDays,
     calendarDaysBetween,
 };
