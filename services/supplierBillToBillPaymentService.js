@@ -107,11 +107,17 @@ class SupplierBillToBillPaymentService {
                 paymentsOut.reduce((total, payment) => total + (Number(payment.amount) || 0), 0) +
                 billOverflowAmount;
 
+            const pendingAmount = purchasesWithStatus.reduce(
+                (total, purchase) => total + (Number(purchase.remaining_amount) || 0),
+                0
+            );
+
             return {
                 supplier_id: supplierId,
                 bill_overflow_amount: billOverflowAmount,
                 last_clear_date: latestBillPayment?.bill_latest_clear_date || null,
                 total_payment_amount: totalPaymentAmount,
+                pending_amount: pendingAmount,
                 payments_out: paymentsOut,
                 purchases: purchasesWithStatus,
             };

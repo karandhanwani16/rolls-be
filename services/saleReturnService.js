@@ -2,6 +2,10 @@ const prisma = require('../prisma/client');
 const { PurchaseItemStatus } = require('../utils/purchaseItemStatus');
 const transactionService = require('./transactions');
 const { normalizeUnit } = require('../utils/quantityUnits');
+const {
+    enrichReturnRecordShade,
+    enrichReturnRecordsShade,
+} = require('../utils/enrichReturnItemsShade');
 
 const returnedItems = (items = []) =>
     (items || []).filter((item) => parseFloat(item.meters) > 0);
@@ -54,10 +58,11 @@ const nextNumber = async (model, date) => {
 
 class SaleReturnService {
     async getAll() {
-        return prisma.saleReturn.findMany({
+        const records = await prisma.saleReturn.findMany({
             include: { customer: true, items: true },
             orderBy: { created_at: 'desc' }
         });
+        return enrichReturnRecordsShade(records);
     }
 
     async getById(id) {
@@ -66,7 +71,7 @@ class SaleReturnService {
             include: { customer: true, items: true, sale: true }
         });
         if (!record) throw new Error('Sales return not found');
-        return record;
+        return enrichReturnRecordShade(record);
     }
 
     async getNextNumber(date) {
@@ -130,10 +135,11 @@ class SaleReturnService {
                 saleReturn.total
             );
 
-            return tx.saleReturn.findUnique({
+            const created = await tx.saleReturn.findUnique({
                 where: { id: saleReturn.id },
                 include: { items: true }
             });
+            return enrichReturnRecordShade(created);
         });
     }
 
@@ -212,10 +218,11 @@ class SaleReturnService {
                 saleReturn.total
             );
 
-            return tx.saleReturn.findUnique({
+            const updated = await tx.saleReturn.findUnique({
                 where: { id: saleReturn.id },
                 include: { items: true }
             });
+            return enrichReturnRecordShade(updated);
         });
     }
 

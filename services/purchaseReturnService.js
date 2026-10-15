@@ -5,6 +5,10 @@ const {
     applyPurchaseReturnStock,
     revertPurchaseReturnStock,
 } = require('../utils/purchaseReturnStock');
+const {
+    enrichReturnRecordShade,
+    enrichReturnRecordsShade,
+} = require('../utils/enrichReturnItemsShade');
 
 const returnedItems = (items = []) =>
     (items || []).filter((item) => parseFloat(item.meters) > 0);
@@ -39,10 +43,11 @@ const nextNumber = async (date) => {
 
 class PurchaseReturnService {
     async getAll() {
-        return prisma.purchaseReturn.findMany({
+        const records = await prisma.purchaseReturn.findMany({
             include: { supplier: true, items: true },
             orderBy: { created_at: 'desc' }
         });
+        return enrichReturnRecordsShade(records);
     }
 
     async getById(id) {
@@ -51,7 +56,7 @@ class PurchaseReturnService {
             include: { supplier: true, items: true, purchase: true }
         });
         if (!record) throw new Error('Purchase return not found');
-        return record;
+        return enrichReturnRecordShade(record);
     }
 
     async getNextNumber(date) {
@@ -99,10 +104,11 @@ class PurchaseReturnService {
                 purchaseReturn.total
             );
 
-            return tx.purchaseReturn.findUnique({
+            const created = await tx.purchaseReturn.findUnique({
                 where: { id: purchaseReturn.id },
                 include: { items: true }
             });
+            return enrichReturnRecordShade(created);
         });
     }
 
@@ -157,10 +163,11 @@ class PurchaseReturnService {
                 purchaseReturn.total
             );
 
-            return tx.purchaseReturn.findUnique({
+            const updated = await tx.purchaseReturn.findUnique({
                 where: { id: purchaseReturn.id },
                 include: { items: true }
             });
+            return enrichReturnRecordShade(updated);
         });
     }
 

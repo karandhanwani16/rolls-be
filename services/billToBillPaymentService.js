@@ -121,11 +121,17 @@ class BillToBillPaymentService {
                 0
             ) + billOverflowAmount;
 
+            const pendingAmount = salesWithStatus.reduce(
+                (total, sale) => total + (Number(sale.remaining_amount) || 0),
+                0
+            );
+
             return {
                 customer_id: customerId,
                 bill_overflow_amount: billOverflowAmount,
                 last_clear_date: latestBillPayment?.bill_latest_clear_date || null,
                 total_payment_amount: totalPaymentAmount,
+                pending_amount: pendingAmount,
                 payments_in: paymentsIn,
                 sales: salesWithStatus
             };

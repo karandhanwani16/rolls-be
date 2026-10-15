@@ -111,3 +111,48 @@ describe('invoiceTemplate roll order', () => {
         assert.match(html, /Silk[\s\S]*Cotton/);
     });
 });
+
+function rollLineItems(itemCount) {
+    return Array.from({ length: itemCount }, (_, i) => ({
+        name: 'Fabric',
+        width: '54',
+        unit: 'm',
+        price: 10,
+        roll_no: `R${i + 1}`,
+        shade: `${i + 1}`,
+        mts: 10,
+        amount: 100,
+    }));
+}
+
+function pageSections(html) {
+    return html.split(/<div class="page/).slice(1);
+}
+
+function itemRowsInSection(section) {
+    return (section.match(/class="item-row"/g) || []).length;
+}
+
+describe('invoiceTemplate pagination', () => {
+    it('splits bill rows across two pages instead of an empty summary page', () => {
+        const html = invoiceTemplate(sampleInvoice(rollLineItems(20)), 'bill');
+        const sections = pageSections(html);
+        assert.equal(sections.length, 2);
+        assert.ok(itemRowsInSection(sections[0]) > 0);
+        assert.ok(itemRowsInSection(sections[1]) > 0);
+        assert.match(sections[1], /footer-block/);
+    });
+
+    it('splits challan rows the same way for mid-size lists', () => {
+        const html = invoiceTemplate(sampleInvoice(rollLineItems(22)), 'challan');
+        const sections = pageSections(html);
+        assert.equal(sections.length, 2);
+        assert.ok(itemRowsInSection(sections[0]) > 0);
+        assert.ok(itemRowsInSection(sections[1]) > 0);
+    });
+
+    it('keeps a single page when rows fit with the footer', () => {
+        const html = invoiceTemplate(sampleInvoice(rollLineItems(12)), 'bill');
+        assert.equal(pageSections(html).length, 1);
+    });
+});

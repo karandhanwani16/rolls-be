@@ -7,6 +7,14 @@ const {
     attachPurchaseOutstanding,
 } = require('../utils/purchaseOutstanding');
 
+function filterOutstandingPurchasesOnly(purchases) {
+    return (purchases || []).filter(
+        (purchase) =>
+            purchase.payment_status !== 'FULL' &&
+            (Number(purchase.remaining_amount) || 0) > 0
+    );
+}
+
 async function syncProductWidthsFromItems(tx, items) {
     const widthByProduct = new Map();
     for (const item of items || []) {
@@ -62,7 +70,7 @@ class PurchaseService {
         );
     }
 
-    async getAllPurchases(supplierId) {
+    async getAllPurchases(supplierId, { outstandingOnly = false } = {}) {
         const purchases = await prisma.purchase.findMany({
             where: supplierId ? { supplier_id: supplierId } : undefined,
             include: {
@@ -73,7 +81,11 @@ class PurchaseService {
                 created_at: 'desc'
             }
         });
-        return this.enrichPurchasesWithPaymentStatus(purchases);
+        const enriched = await this.enrichPurchasesWithPaymentStatus(purchases);
+        if (outstandingOnly) {
+            return filterOutstandingPurchasesOnly(enriched);
+        }
+        return enriched;
     }
 
     async getPurchaseById(id) {

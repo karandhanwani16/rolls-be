@@ -4,6 +4,7 @@ const saleController = require('../controllers/saleController');
 const router = express.Router();
 
 router.get('/', saleController.getAllSales);
+router.get('/pending-bills-report', saleController.getPendingBillsReport);
 router.get('/next-number', saleController.getNextSalesNumber);
 router.get('/invoice/:id', saleController.generateInvoicePDF);
 router.get('/invoice-html/:id', saleController.generateInvoiceHTML);
