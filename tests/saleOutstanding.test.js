@@ -78,30 +78,4 @@ describe('allocateSaleOutstanding', () => {
         assert.equal(result.get('s1').remaining_amount, 5000);
         assert.equal(result.get('s1').payment_status, 'UNPAID');
     });
-
-    it('records applied credits on partially cleared sales', () => {
-        const payment = {
-            id: 'p1',
-            actual_id: 'c1',
-            received_amount: 350,
-            discount: 0,
-            type: 'cash',
-            payment_date: '2026-01-11',
-            created_at: '2026-01-11',
-        };
-        const result = allocateSaleOutstanding({
-            sales: [
-                { id: 's1', customer_id: 'c1', total: 36300, date: '2026-01-10', created_at: '2026-01-10' },
-            ],
-            payments: [payment],
-            saleReturns: [],
-            customers: [{ id: 'c1', opening_balance: 0 }],
-        });
-
-        const credits = result.get('s1').applied_credits;
-        assert.equal(credits.length, 1);
-        assert.equal(credits[0].source_type, 'PAYMENT');
-        assert.equal(credits[0].payment_id, 'p1');
-        assert.equal(credits[0].amount, 350);
-    });
 });

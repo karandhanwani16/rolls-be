@@ -5,10 +5,6 @@ const {
     applyPurchaseReturnStock,
     revertPurchaseReturnStock,
 } = require('../utils/purchaseReturnStock');
-const {
-    enrichReturnRecordShade,
-    enrichReturnRecordsShade,
-} = require('../utils/enrichReturnItemsShade');
 
 const returnedItems = (items = []) =>
     (items || []).filter((item) => parseFloat(item.meters) > 0);
@@ -43,11 +39,10 @@ const nextNumber = async (date) => {
 
 class PurchaseReturnService {
     async getAll() {
-        const records = await prisma.purchaseReturn.findMany({
+        return prisma.purchaseReturn.findMany({
             include: { supplier: true, items: true },
             orderBy: { created_at: 'desc' }
         });
-        return enrichReturnRecordsShade(records);
     }
 
     async getById(id) {
@@ -56,7 +51,7 @@ class PurchaseReturnService {
             include: { supplier: true, items: true, purchase: true }
         });
         if (!record) throw new Error('Purchase return not found');
-        return enrichReturnRecordShade(record);
+        return record;
     }
 
     async getNextNumber(date) {
@@ -71,7 +66,7 @@ class PurchaseReturnService {
         }
         const transportCharges = parseFloat(details.transport_charges) || 0;
         const itemsTotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
-        const total = parseFloat((itemsTotal + transportCharges).toFixed(2));
+        const total = Math.round(itemsTotal + transportCharges);
         const return_no = details.return_no || await this.getNextNumber(details.return_date);
 
         return prisma.$transaction(async (tx) => {
@@ -104,11 +99,10 @@ class PurchaseReturnService {
                 purchaseReturn.total
             );
 
-            const created = await tx.purchaseReturn.findUnique({
+            return tx.purchaseReturn.findUnique({
                 where: { id: purchaseReturn.id },
                 include: { items: true }
             });
-            return enrichReturnRecordShade(created);
         });
     }
 
@@ -120,7 +114,7 @@ class PurchaseReturnService {
         }
         const transportCharges = parseFloat(details.transport_charges) || 0;
         const itemsTotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
-        const total = parseFloat((itemsTotal + transportCharges).toFixed(2));
+        const total = Math.round(itemsTotal + transportCharges);
 
         return prisma.$transaction(async (tx) => {
             const existing = await tx.purchaseReturn.findUnique({
@@ -163,11 +157,10 @@ class PurchaseReturnService {
                 purchaseReturn.total
             );
 
-            const updated = await tx.purchaseReturn.findUnique({
+            return tx.purchaseReturn.findUnique({
                 where: { id: purchaseReturn.id },
                 include: { items: true }
             });
-            return enrichReturnRecordShade(updated);
         });
     }
 

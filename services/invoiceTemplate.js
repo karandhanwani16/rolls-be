@@ -8,9 +8,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
     } = require('../utils/quantityUnits');
     const { sortRollsByShade } = require('../utils/sortRolls');
 
-    // Full page of rolls (no summary). Last page leaves room for totals / challan note.
-    const ROWS_FULL_PAGE = 24;
-    const ROWS_LAST_PAGE = isChallan ? 18 : 16;
+    // Max rolls per page. Last page leaves room for totals / challan note when splitting.
+    const ROWS_FULL_PAGE = 15;
+    const ROWS_LAST_PAGE = isChallan ? 10 : 9;
 
     const documentUnit = normalizeUnit(
         invoiceData.unit || invoiceData.items?.[0]?.unit || 'm'
@@ -76,42 +76,22 @@ module.exports = (invoiceData, documentType = 'bill') => {
         });
     });
 
-    // Continuation pages use the full grid; the last page reserves space for totals/footer.
-    const paginateRollLines = (lines, rowsFullPage, rowsLastPage) => {
-        if (!lines.length) {
-            return [[]];
-        }
-        if (lines.length <= rowsLastPage) {
-            return [lines];
-        }
-
-        const pages = [];
-        let remaining = lines.slice();
-
-        while (remaining.length > rowsLastPage) {
-            let take;
-            if (remaining.length <= rowsFullPage) {
-                // Would have put every row on this page and left an empty footer-only page.
-                take = Math.min(
-                    rowsFullPage,
-                    Math.max(
-                        remaining.length - rowsLastPage,
-                        Math.ceil(remaining.length / 2)
-                    )
-                );
-            } else {
-                take = rowsFullPage;
+    // Paginate: max ROWS_FULL_PAGE per page. Prefer one page with summary when remaining
+    // fits under the max (avoids a second page with 0 roll items / summary-only).
+    const pages = [];
+    const linesLeft = rollLines.slice();
+    if (linesLeft.length === 0) {
+        pages.push([]);
+    } else {
+        while (linesLeft.length > ROWS_LAST_PAGE) {
+            if (linesLeft.length <= ROWS_FULL_PAGE) {
+                // Keep summary on this page instead of an empty/continuation-only next page.
+                break;
             }
-            take = Math.max(1, Math.min(take, remaining.length - 1));
-            pages.push(remaining.splice(0, take));
+            pages.push(linesLeft.splice(0, ROWS_FULL_PAGE));
         }
-        if (remaining.length) {
-            pages.push(remaining);
-        }
-        return pages;
-    };
-
-    const pages = paginateRollLines(rollLines, ROWS_FULL_PAGE, ROWS_LAST_PAGE);
+        pages.push(linesLeft);
+    }
 
     const unitTotals = sumQuantityByUnit(
         invoiceData.items.map((item) => ({ meters: item.mts, unit: item.unit })),
@@ -256,7 +236,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
   //   PLEASE NOTE : PAYMENT AFTER ${creditDays} DAYS 1% INTREST WILL BE CHARGED<br/>
   // </div>
     const creditDays = parseInt(invoiceData.credit_days, 10) || 0;
-    const billNoteHtml = `<div class="owner-signature"><span class="owner-signature-label">OWNER SIGNATURE :</span><span class="owner-signature-line"></span></div>`;
+    const billNoteHtml = `<div class="owner-signature">OWNER SIGNATURE : ________________</div>`;
 
     const footerRows = isChallan
         ? `
@@ -295,9 +275,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const pageHtml = pages
         .map((lines, pageIndex) => {
             const isLastPage = pageIndex === pages.length - 1;
-            const continued =
-                pages.length > 1 && pageIndex > 0
-                    ? `<div class="continued">Continued…</div>`
+            const continuedNext =
+                !isLastPage
+                    ? `<div class="continued-next">Continued on next page</div>`
                     : '';
 
             return `
@@ -306,7 +286,6 @@ module.exports = (invoiceData, documentType = 'bill') => {
       <div class="sub-header">${heading}</div>
       <div class="company-name">T. A. TEX</div>
       <div class="address">ULHASNAGAR 421005</div>
-      ${continued}
     </div>
     <div class="details-row">
       <div class="details-col">
@@ -326,7 +305,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
           ${columnHeaderRow}
         </thead>
         <tbody>
-          ${renderItemRows(lines, { fillPage: !isLastPage })}
+          ${renderItemRows(lines, { fillPage: true })}
         </tbody>
       </table>
     </div>
@@ -345,17 +324,16 @@ module.exports = (invoiceData, documentType = 'bill') => {
         कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
         रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
       </div>
-      <div class="challan-note challan-note-en">
+      <div class="challan-note challan-note-en" style="padding-top: 2px;">
         <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
         <div class="challan-signature-row">
-          <span>Maker Signature</span>
-          <span class="challan-signature-line"></span>
+          <span>Maker Signature ________________________</span>
         </div>
       </div>`
               : ''
       }
     </div>`
-            : ''
+            : continuedNext
     }
   </div>`;
         })
@@ -415,10 +393,14 @@ module.exports = (invoiceData, documentType = 'bill') => {
     .address {
       font-size: 14px;
     }
-    .continued {
-      font-size: 12px;
+    .continued-next {
+      flex-shrink: 0;
+      border: 1px solid #000;
+      border-top: none;
+      padding: 8px 10px;
+      font-size: 13px;
       font-weight: 700;
-      margin-top: 4px;
+      text-align: center;
     }
     .details-row {
       border: 1px solid #000;
@@ -487,36 +469,16 @@ module.exports = (invoiceData, documentType = 'bill') => {
       justify-content: space-between;
     }
     .challan-note-en {
-      flex-direction: column;
-      align-items: flex-start;
-      justify-content: flex-start;
-      gap: 10px;
-      padding-top: 4px;
-      padding-bottom: 14px;
+      text-align: center;
     }
     .challan-claim {
-      width: 100%;
-      text-align: center;
       font-size: 14px;
       font-weight: 700;
     }
     .challan-signature-row {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      width: 100%;
-      margin-top: 8px;
+      text-align: left;
       font-size: 13px;
       font-weight: 700;
-      text-align: left;
-    }
-    .challan-signature-line {
-      display: block;
-      width: 72%;
-      min-width: 140px;
-      margin-top: 28px;
-      border-bottom: 1px solid #000;
-      min-height: 1px;
     }
     th, td {
       padding: 4px 8px;
@@ -561,7 +523,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 18px;
     }
     .bill-note-cell {
-      vertical-align: top;
+      vertical-align: bottom;
       text-align: left;
       padding: 8px 10px;
     }
@@ -572,22 +534,10 @@ module.exports = (invoiceData, documentType = 'bill') => {
       text-transform: uppercase;
     }
     .owner-signature {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      margin-top: 56px;
+      margin-top: 48px;
       font-size: 16px;
       font-weight: 700;
       text-transform: uppercase;
-      text-align: left;
-    }
-    .owner-signature-line {
-      display: block;
-      width: 78%;
-      min-width: 160px;
-      margin-top: 32px;
-      border-bottom: 1px solid #000;
-      min-height: 1px;
     }
     @media print {
       html, body {

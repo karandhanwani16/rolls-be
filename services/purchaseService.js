@@ -7,14 +7,6 @@ const {
     attachPurchaseOutstanding,
 } = require('../utils/purchaseOutstanding');
 
-function filterOutstandingPurchasesOnly(purchases) {
-    return (purchases || []).filter(
-        (purchase) =>
-            purchase.payment_status !== 'FULL' &&
-            (Number(purchase.remaining_amount) || 0) > 0
-    );
-}
-
 async function syncProductWidthsFromItems(tx, items) {
     const widthByProduct = new Map();
     for (const item of items || []) {
@@ -70,7 +62,7 @@ class PurchaseService {
         );
     }
 
-    async getAllPurchases(supplierId, { outstandingOnly = false } = {}) {
+    async getAllPurchases(supplierId) {
         const purchases = await prisma.purchase.findMany({
             where: supplierId ? { supplier_id: supplierId } : undefined,
             include: {
@@ -81,11 +73,7 @@ class PurchaseService {
                 created_at: 'desc'
             }
         });
-        const enriched = await this.enrichPurchasesWithPaymentStatus(purchases);
-        if (outstandingOnly) {
-            return filterOutstandingPurchasesOnly(enriched);
-        }
-        return enriched;
+        return this.enrichPurchasesWithPaymentStatus(purchases);
     }
 
     async getPurchaseById(id) {
@@ -114,7 +102,7 @@ class PurchaseService {
             const discount = parseFloat(purchaseDetails.discount) || 0;
             const billUnit = normalizeUnit(purchaseDetails.unit);
             const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
-            const total = parseFloat((itemsTotal + transportCharges - discount).toFixed(2));
+            const total = Math.round(itemsTotal + transportCharges - discount);
 
             const purchase = await prisma.purchase.create({
                 data: {
@@ -187,7 +175,7 @@ class PurchaseService {
             const discount = parseFloat(purchaseDetails.discount) || 0;
             const billUnit = normalizeUnit(purchaseDetails.unit);
             const itemsTotal = (items || []).reduce((sum, item) => sum + (item.total_price || 0), 0);
-            const total = parseFloat((itemsTotal + transportCharges - discount).toFixed(2));
+            const total = Math.round(itemsTotal + transportCharges - discount);
 
             const purchase = await prisma.purchase.update({
                 where: { id },

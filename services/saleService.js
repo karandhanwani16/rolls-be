@@ -10,18 +10,6 @@ const {
     attachSaleOutstanding,
 } = require('../utils/saleOutstanding');
 
-function round2(value) {
-    return Math.round((Number(value) || 0) * 100) / 100;
-}
-
-function filterOutstandingBillsOnly(sales) {
-    return (sales || []).filter(
-        (sale) =>
-            sale.payment_status !== 'FULL' &&
-            (Number(sale.remaining_amount) || 0) > 0
-    );
-}
-
 const customerPaymentFilter = {
     NOT: {
         payment_category: 'VATAV',
@@ -68,7 +56,7 @@ class SaleService {
         );
     }
 
-    async getAllSales(customerId, { outstandingOnly = false } = {}) {
+    async getAllSales(customerId) {
         const sales = await prisma.sale.findMany({
             where: customerId ? { customer_id: customerId } : undefined,
             include: {
@@ -79,159 +67,7 @@ class SaleService {
                 created_at: 'desc'
             }
         });
-        const enriched = await this.enrichSalesWithPaymentStatus(sales);
-        if (outstandingOnly) {
-            return filterOutstandingBillsOnly(enriched);
-        }
-        return enriched;
-    }
-
-    async getPendingBillsReport({ customerIds, startDate, endDate } = {}) {
-        const where = {};
-        if (customerIds?.length) {
-            where.customer_id = { in: customerIds };
-        }
-        if (startDate || endDate) {
-            where.date = {};
-            if (startDate) {
-                where.date.gte = new Date(startDate);
-            }
-            if (endDate) {
-                const end = new Date(endDate);
-                end.setHours(23, 59, 59, 999);
-                where.date.lte = end;
-            }
-        }
-
-        const sales = await prisma.sale.findMany({
-            where,
-            include: {
-                customer: true,
-                items: {
-                    orderBy: { created_at: 'asc' },
-                },
-            },
-            orderBy: [{ date: 'desc' }, { created_at: 'desc' }],
-        });
-
-        if (!sales.length) {
-            return {
-                bills: [],
-                summary: {
-                    bill_count: 0,
-                    total_outstanding: 0,
-                    total_cleared: 0,
-                    unpaid_count: 0,
-                    partial_count: 0,
-                },
-            };
-        }
-
-        const scopedCustomerIds = [...new Set(sales.map((sale) => sale.customer_id))];
-        const [allSales, payments, saleReturns, customers] = await Promise.all([
-            prisma.sale.findMany({
-                where: { customer_id: { in: scopedCustomerIds } },
-                orderBy: [{ date: 'asc' }, { created_at: 'asc' }],
-            }),
-            prisma.paymentIn.findMany({
-                where: {
-                    actual_id: { in: scopedCustomerIds },
-                    ...customerPaymentFilter,
-                },
-                orderBy: [{ payment_date: 'asc' }, { created_at: 'asc' }],
-            }),
-            prisma.saleReturn.findMany({
-                where: { customer_id: { in: scopedCustomerIds } },
-            }),
-            prisma.customer.findMany({
-                where: { id: { in: scopedCustomerIds } },
-            }),
-        ]);
-
-        const remainingById = allocateSaleOutstanding({
-            sales: allSales,
-            payments,
-            saleReturns,
-            customers,
-        });
-
-        const pendingBills = sales
-            .map((sale) => {
-                const allocation = remainingById.get(sale.id);
-                const enriched = attachSaleOutstanding(sale, allocation);
-                if (enriched.payment_status === 'FULL' || enriched.remaining_amount <= 0) {
-                    return null;
-                }
-
-                const paymentsApplied = (enriched.applied_credits || []).filter(
-                    (credit) => credit.source_type === 'PAYMENT'
-                );
-                const returnsApplied = (enriched.applied_credits || []).filter(
-                    (credit) => credit.source_type === 'SALE_RETURN'
-                );
-
-                return {
-                    id: sale.id,
-                    sales_no: sale.sales_no,
-                    challan_no: sale.challan_no,
-                    customer_id: sale.customer_id,
-                    customer_name: sale.customer_name,
-                    customer_phone: sale.customer?.phone || null,
-                    customer_city: sale.customer?.city || null,
-                    date: sale.date,
-                    credit_days: sale.credit_days || 0,
-                    due_date: enriched.due_date,
-                    elapsed_days: enriched.elapsed_days,
-                    overdue_days: enriched.overdue_days,
-                    total: round2(sale.total),
-                    cleared_amount: enriched.cleared_amount,
-                    remaining_amount: enriched.remaining_amount,
-                    payment_status: enriched.payment_status,
-                    description: sale.description,
-                    transport_charges: sale.transport_charges || 0,
-                    discount: sale.discount || 0,
-                    items: (sale.items || []).map((item) => ({
-                        id: item.id,
-                        product_name: item.product_name,
-                        roll_no: item.roll_no,
-                        shade: item.shade,
-                        width: item.width,
-                        meters: item.meters,
-                        unit: item.unit,
-                        price: item.price,
-                        total: item.total,
-                    })),
-                    payments: paymentsApplied,
-                    sale_returns: returnsApplied,
-                    paid_via_payments: round2(
-                        paymentsApplied.reduce((sum, row) => sum + row.amount, 0)
-                    ),
-                    paid_via_returns: round2(
-                        returnsApplied.reduce((sum, row) => sum + row.amount, 0)
-                    ),
-                };
-            })
-            .filter(Boolean);
-
-        const summary = pendingBills.reduce(
-            (acc, bill) => {
-                acc.bill_count += 1;
-                acc.total_outstanding = round2(acc.total_outstanding + bill.remaining_amount);
-                acc.total_cleared = round2(acc.total_cleared + bill.cleared_amount);
-                if (bill.payment_status === 'UNPAID') acc.unpaid_count += 1;
-                if (bill.payment_status === 'PARTIAL') acc.partial_count += 1;
-                return acc;
-            },
-            {
-                bill_count: 0,
-                total_outstanding: 0,
-                total_cleared: 0,
-                unpaid_count: 0,
-                partial_count: 0,
-            }
-        );
-
-        return { bills: pendingBills, summary };
+        return this.enrichSalesWithPaymentStatus(sales);
     }
 
     async getSaleById(id) {

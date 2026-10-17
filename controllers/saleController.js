@@ -3,15 +3,7 @@ const saleService = require('../services/saleService');
 class SaleController {
     async getAllSales(req, res) {
         try {
-            const forReturn = ['1', 'true'].includes(
-                String(req.query.for_return || '').toLowerCase()
-            );
-            const outstandingOnly = ['1', 'true'].includes(
-                String(req.query.outstanding_only || '').toLowerCase()
-            );
-            const sales = await saleService.getAllSales(req.query.customer_id, {
-                outstandingOnly: outstandingOnly && !forReturn,
-            });
+            const sales = await saleService.getAllSales(req.query.customer_id);
             return res.json({
                 success: true,
                 data: sales
@@ -21,33 +13,6 @@ class SaleController {
             return res.status(400).json({
                 success: false,
                 error: error.message
-            });
-        }
-    }
-
-    async getPendingBillsReport(req, res) {
-        try {
-            const customerIds = req.query.customerIds
-                ? String(req.query.customerIds)
-                    .split(',')
-                    .map((id) => id.trim())
-                    .filter(Boolean)
-                : undefined;
-            const report = await saleService.getPendingBillsReport({
-                customerIds,
-                startDate: req.query.startDate,
-                endDate: req.query.endDate,
-            });
-            return res.json({
-                success: true,
-                data: report.bills,
-                summary: report.summary,
-            });
-        } catch (error) {
-            console.error('Get pending bills report error:', error);
-            return res.status(400).json({
-                success: false,
-                error: error.message,
             });
         }
     }

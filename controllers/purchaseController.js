@@ -3,15 +3,7 @@ const purchaseService = require('../services/purchaseService');
 class PurchaseController {
     async getAllPurchases(req, res) {
         try {
-            const forReturn = ['1', 'true'].includes(
-                String(req.query.for_return || '').toLowerCase()
-            );
-            const outstandingOnly = ['1', 'true'].includes(
-                String(req.query.outstanding_only || '').toLowerCase()
-            );
-            const purchases = await purchaseService.getAllPurchases(req.query.supplier_id, {
-                outstandingOnly: outstandingOnly && !forReturn,
-            });
+            const purchases = await purchaseService.getAllPurchases(req.query.supplier_id);
             return res.json({
                 success: true,
                 data: purchases
