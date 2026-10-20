@@ -236,7 +236,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
   //   PLEASE NOTE : PAYMENT AFTER ${creditDays} DAYS 1% INTREST WILL BE CHARGED<br/>
   // </div>
     const creditDays = parseInt(invoiceData.credit_days, 10) || 0;
-    const billNoteHtml = `<div class="owner-signature">OWNER SIGNATURE : ________________</div>`;
+    const billNoteHtml = `<div class="owner-signature">CUSTOMER SIGNATURE : ________________</div>`;
 
     const footerRows = isChallan
         ? `
@@ -327,7 +327,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       <div class="challan-note challan-note-en" style="padding-top: 2px;">
         <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
         <div class="challan-signature-row">
-          <span>Maker Signature ________________________</span>
+          <span style="display: flex; gap: 32px;"><span>Maker Signature</span> <span>________________________</span></span>
         </div>
       </div>`
               : ''

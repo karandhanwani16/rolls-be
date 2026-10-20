@@ -56,31 +56,29 @@ class CustomerService {
             voucherNo: sale.sales_no,
             debit: sale.total,
             credit: 0,
+            discount: 0,
         };
     }
 
     formatCustomerPayment(payment) {
         const { customerCreditAmount, PAYMENT_CATEGORY } = require('./paymentInService');
         const isWatav = payment.payment_category === PAYMENT_CATEGORY.VATAV;
-        const credit = customerCreditAmount(payment);
-        const discount = Number(payment.discount) || 0;
-        const baseLabel = isWatav
+        // Settlement = received + discount; report splits discount into its own column
+        const settlement = customerCreditAmount(payment);
+        const discount = settlement > 0 ? (Number(payment.discount) || 0) : 0;
+        const credit = settlement - discount;
+        const particulars = isWatav
             ? `Watav payment from ${payment.actual_customer?.name || 'Unknown'}`
             : `Payment from ${payment.actual_customer?.name || 'Unknown'}`;
-        const particulars =
-            discount > 0
-                ? `${baseLabel} (incl. discount Rs. ${discount.toLocaleString('en-IN')})`
-                : baseLabel;
         return {
             date: payment.payment_date,
             particulars,
             voucherNo: '-',
             debit: 0,
-            // Customer credit = received/gross + discount (charges do not reduce this)
             credit,
+            discount,
             paymentCategory: payment.payment_category || PAYMENT_CATEGORY.NORMAL,
             entryType: payment.entry_type || null,
-            discount,
         };
     }
 
@@ -91,6 +89,7 @@ class CustomerService {
             voucherNo: saleReturn.return_no,
             debit: 0,
             credit: saleReturn.total,
+            discount: 0,
         };
     }
 
@@ -162,6 +161,7 @@ class CustomerService {
                         closingBalance: 0,
                         totalDebit: 0,
                         totalCredit: 0,
+                        totalDiscount: 0,
                         normalPayments: 0,
                         vatavPayments: 0,
                         totalPayments: 0,
@@ -177,6 +177,7 @@ class CustomerService {
                 closingBalance: 0,
                 totalDebit: 0,
                 totalCredit: 0,
+                totalDiscount: 0,
                 normalPayments: 0,
                 vatavPayments: 0,
                 totalPayments: 0,
@@ -190,13 +191,14 @@ class CustomerService {
                 );
 
                 for (const row of customerPeriodRows) {
-                    if (row.credit > 0 && row.paymentCategory) {
+                    const settlement = (row.credit || 0) + (row.discount || 0);
+                    if (settlement > 0 && row.paymentCategory) {
                         if (row.paymentCategory === 'VATAV') {
-                            summaryTotals.vatavPayments += row.credit;
+                            summaryTotals.vatavPayments += settlement;
                         } else {
-                            summaryTotals.normalPayments += row.credit;
+                            summaryTotals.normalPayments += settlement;
                         }
-                        summaryTotals.totalPayments += row.credit;
+                        summaryTotals.totalPayments += settlement;
                     }
                 }
 
@@ -228,12 +230,14 @@ class CustomerService {
                 summaryTotals.closingBalance += ledger.summary.closingBalance;
                 summaryTotals.totalDebit += ledger.summary.totalDebit;
                 summaryTotals.totalCredit += ledger.summary.totalCredit;
+                summaryTotals.totalDiscount += ledger.summary.totalDiscount || 0;
             }
 
             const sortedRows = allRows.sort((a, b) => new Date(a.date) - new Date(b.date));
             let running = 0;
             const transactions = sortedRows.map((row, index) => {
-                running += row.debit - row.credit;
+                const discount = row.discount || 0;
+                running += row.debit - row.credit - discount;
                 return {
                     srno: index + 1,
                     date: row.date,
@@ -241,6 +245,7 @@ class CustomerService {
                     voucherNo: row.voucherNo,
                     debit: row.debit,
                     credit: row.credit,
+                    discount,
                     balance: running,
                     isOpeningBalance: row.isOpeningBalance || false,
                     isBroughtForward: row.isBroughtForward || false,

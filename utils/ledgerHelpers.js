@@ -31,14 +31,18 @@ function balanceToDebitCredit(balance, positiveSide = 'debit') {
         : { debit: Math.abs(balance), credit: 0 };
 }
 
+function rowNet(row) {
+    return (row.debit || 0) - (row.credit || 0) - (row.discount || 0);
+}
+
 function computeNetFromRows(rows) {
-    return rows.reduce((sum, row) => sum + row.debit - row.credit, 0);
+    return rows.reduce((sum, row) => sum + rowNet(row), 0);
 }
 
 function addRunningBalance(rows) {
     let running = 0;
     return rows.map((row) => {
-        running += row.debit - row.credit;
+        running += rowNet(row);
         return { ...row, balance: running };
     });
 }
@@ -116,7 +120,7 @@ function buildLedgerWithOpeningBalance({
     const openingBalanceAtStart = withBalance.length > 0
         ? (withBalance[0].isBroughtForward
             ? withBalance[0].balance
-            : withBalance[0].balance - (withBalance[0].debit - withBalance[0].credit))
+            : withBalance[0].balance - rowNet(withBalance[0]))
         : 0;
     const closingBalance = withBalance.length > 0
         ? withBalance[withBalance.length - 1].balance
@@ -125,6 +129,7 @@ function buildLedgerWithOpeningBalance({
     const movementRows = withBalance.filter((row) => !row.isOpeningBalance && !row.isBroughtForward);
     const totalDebit = movementRows.reduce((sum, row) => sum + row.debit, 0);
     const totalCredit = movementRows.reduce((sum, row) => sum + row.credit, 0);
+    const totalDiscount = movementRows.reduce((sum, row) => sum + (row.discount || 0), 0);
 
     return {
         rows: withBalance,
@@ -133,6 +138,7 @@ function buildLedgerWithOpeningBalance({
             closingBalance,
             totalDebit,
             totalCredit,
+            totalDiscount,
         },
     };
 }
@@ -142,6 +148,7 @@ module.exports = {
     parseDateEnd,
     dayBeforeDateStr,
     balanceToDebitCredit,
+    rowNet,
     computeNetFromRows,
     addRunningBalance,
     sortLedgerRows,
