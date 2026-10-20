@@ -2,7 +2,9 @@ const pendingBillsReportService = require('../services/pendingBillsReportService
 
 const getCustomerPendingBills = async (req, res) => {
     try {
-        const data = await pendingBillsReportService.getCustomerPendingBills();
+        const data = await pendingBillsReportService.getCustomerPendingBills({
+            partyIds: req.query.partyIds,
+        });
         res.json({ success: true, data });
     } catch (error) {
         console.error('Error fetching customer pending bills:', error);
@@ -15,7 +17,9 @@ const getCustomerPendingBills = async (req, res) => {
 
 const getSupplierPendingBills = async (req, res) => {
     try {
-        const data = await pendingBillsReportService.getSupplierPendingBills();
+        const data = await pendingBillsReportService.getSupplierPendingBills({
+            partyIds: req.query.partyIds,
+        });
         res.json({ success: true, data });
     } catch (error) {
         console.error('Error fetching supplier pending bills:', error);

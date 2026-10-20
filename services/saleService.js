@@ -394,9 +394,9 @@ class SaleService {
         return { message: 'Sale deleted successfully' };
     }
 
-    async generateInvoicePDF(saleId, documentType = 'bill') {
+    async generateInvoicePDF(saleId, documentType = 'bill', options = {}) {
         try {
-            const html = await this.generateInvoiceHTML(saleId, documentType);
+            const html = await this.generateInvoiceHTML(saleId, documentType, options);
 
             const browser = await puppeteer.launch({
                 headless: 'new',
@@ -427,9 +427,13 @@ class SaleService {
         }
     }
 
-    async generateInvoiceHTML(saleId, documentType = 'bill') {
+    async generateInvoiceHTML(saleId, documentType = 'bill', options = {}) {
         try {
             const sale = await this.getSaleById(saleId);
+            const showInterestNote = Boolean(options.showInterestNote);
+            const saleCreditDays = parseInt(sale.credit_days, 10) || 0;
+            const customerCreditDays = parseInt(sale.customer?.credit_days, 10) || 0;
+            const creditDays = saleCreditDays || customerCreditDays || 0;
 
             const invoiceData = {
                 customer: sale.customer_name,
@@ -453,7 +457,8 @@ class SaleService {
                 challan_no: sale.challan_no,
                 godown: sale.godown?.name || '',
                 maker: sale.maker,
-                credit_days: sale.credit_days || 0,
+                credit_days: creditDays,
+                showInterestNote,
             };
             return invoiceTemplate(invoiceData, documentType);
         } catch (error) {

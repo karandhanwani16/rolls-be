@@ -12,6 +12,17 @@ function round2(value) {
     return Math.round((Number(value) || 0) * 100) / 100;
 }
 
+function parsePartyIds(partyIds) {
+    if (!partyIds) return [];
+    if (Array.isArray(partyIds)) {
+        return partyIds.map(String).filter(Boolean);
+    }
+    return String(partyIds)
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+}
+
 const customerPaymentFilter = {
     NOT: {
         payment_category: 'VATAV',
@@ -25,18 +36,62 @@ function sortByDateAsc(a, b) {
     return aTime - bTime;
 }
 
+function buildSummary(groups) {
+    return groups.reduce(
+        (acc, group) => {
+            acc.party_count += 1;
+            acc.bill_count += group.bill_count;
+            acc.total_bill_amount = round2(acc.total_bill_amount + group.total_bill_amount);
+            acc.total_paid = round2(acc.total_paid + group.total_paid);
+            acc.total_outstanding = round2(
+                acc.total_outstanding + group.total_outstanding
+            );
+            return acc;
+        },
+        {
+            party_count: 0,
+            bill_count: 0,
+            total_bill_amount: 0,
+            total_paid: 0,
+            total_outstanding: 0,
+        }
+    );
+}
+
 class PendingBillsReportService {
-    async getCustomerPendingBills() {
+    async getCustomerPendingBills({ partyIds } = {}) {
+        const selectedPartyIds = parsePartyIds(partyIds);
+        const customerWhere =
+            selectedPartyIds.length > 0 ? { id: { in: selectedPartyIds } } : {};
+        const saleWhere =
+            selectedPartyIds.length > 0
+                ? { customer_id: { in: selectedPartyIds } }
+                : {};
+        const paymentWhere =
+            selectedPartyIds.length > 0
+                ? {
+                      AND: [
+                          customerPaymentFilter,
+                          { actual_id: { in: selectedPartyIds } },
+                      ],
+                  }
+                : customerPaymentFilter;
+        const returnWhere =
+            selectedPartyIds.length > 0
+                ? { customer_id: { in: selectedPartyIds } }
+                : {};
+
         const [sales, payments, saleReturns, customers] = await Promise.all([
             prisma.sale.findMany({
+                where: saleWhere,
                 orderBy: [{ date: 'asc' }, { created_at: 'asc' }],
             }),
             prisma.paymentIn.findMany({
-                where: customerPaymentFilter,
+                where: paymentWhere,
                 orderBy: [{ payment_date: 'asc' }, { created_at: 'asc' }],
             }),
-            prisma.saleReturn.findMany(),
-            prisma.customer.findMany(),
+            prisma.saleReturn.findMany({ where: returnWhere }),
+            prisma.customer.findMany({ where: customerWhere }),
         ]);
 
         const regularCustomers = customers.filter(
@@ -110,39 +165,37 @@ class PendingBillsReportService {
             }))
             .sort((a, b) => a.party_name.localeCompare(b.party_name));
 
-        const summary = groups.reduce(
-            (acc, group) => {
-                acc.party_count += 1;
-                acc.bill_count += group.bill_count;
-                acc.total_bill_amount = round2(acc.total_bill_amount + group.total_bill_amount);
-                acc.total_paid = round2(acc.total_paid + group.total_paid);
-                acc.total_outstanding = round2(
-                    acc.total_outstanding + group.total_outstanding
-                );
-                return acc;
-            },
-            {
-                party_count: 0,
-                bill_count: 0,
-                total_bill_amount: 0,
-                total_paid: 0,
-                total_outstanding: 0,
-            }
-        );
-
-        return { summary, groups };
+        return { summary: buildSummary(groups), groups };
     }
 
-    async getSupplierPendingBills() {
+    async getSupplierPendingBills({ partyIds } = {}) {
+        const selectedPartyIds = parsePartyIds(partyIds);
+        const supplierWhere =
+            selectedPartyIds.length > 0 ? { id: { in: selectedPartyIds } } : {};
+        const purchaseWhere =
+            selectedPartyIds.length > 0
+                ? { supplier_id: { in: selectedPartyIds } }
+                : {};
+        const paymentWhere =
+            selectedPartyIds.length > 0
+                ? { supplier_id: { in: selectedPartyIds } }
+                : {};
+        const returnWhere =
+            selectedPartyIds.length > 0
+                ? { supplier_id: { in: selectedPartyIds } }
+                : {};
+
         const [purchases, payments, purchaseReturns, suppliers] = await Promise.all([
             prisma.purchase.findMany({
+                where: purchaseWhere,
                 orderBy: [{ date: 'asc' }, { created_at: 'asc' }],
             }),
             prisma.paymentOut.findMany({
+                where: paymentWhere,
                 orderBy: [{ payment_date: 'asc' }, { created_at: 'asc' }],
             }),
-            prisma.purchaseReturn.findMany(),
-            prisma.supplier.findMany(),
+            prisma.purchaseReturn.findMany({ where: returnWhere }),
+            prisma.supplier.findMany({ where: supplierWhere }),
         ]);
 
         const remainingById = allocatePurchaseOutstanding({
@@ -210,27 +263,7 @@ class PendingBillsReportService {
             }))
             .sort((a, b) => a.party_name.localeCompare(b.party_name));
 
-        const summary = groups.reduce(
-            (acc, group) => {
-                acc.party_count += 1;
-                acc.bill_count += group.bill_count;
-                acc.total_bill_amount = round2(acc.total_bill_amount + group.total_bill_amount);
-                acc.total_paid = round2(acc.total_paid + group.total_paid);
-                acc.total_outstanding = round2(
-                    acc.total_outstanding + group.total_outstanding
-                );
-                return acc;
-            },
-            {
-                party_count: 0,
-                bill_count: 0,
-                total_bill_amount: 0,
-                total_paid: 0,
-                total_outstanding: 0,
-            }
-        );
-
-        return { summary, groups };
+        return { summary: buildSummary(groups), groups };
     }
 }
 

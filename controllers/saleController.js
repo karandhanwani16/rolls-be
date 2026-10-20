@@ -103,7 +103,14 @@ class SaleController {
     async generateInvoicePDF(req, res) {
         try {
             const documentType = req.query.type === 'challan' ? 'challan' : 'bill';
-            const pdfBuffer = await saleService.generateInvoicePDF(req.params.id, documentType);
+            const showInterestNote =
+                req.query.showInterestNote === 'true' ||
+                req.query.showInterestNote === '1';
+            const pdfBuffer = await saleService.generateInvoicePDF(
+                req.params.id,
+                documentType,
+                { showInterestNote }
+            );
             console.log("pdfBuffer", pdfBuffer);
             res.contentType('application/pdf');
             res.send(pdfBuffer);
@@ -124,7 +131,14 @@ class SaleController {
     async generateInvoiceHTML(req, res) {
         try {
             const documentType = req.query.type === 'challan' ? 'challan' : 'bill';
-            const html = await saleService.generateInvoiceHTML(req.params.id, documentType);
+            const showInterestNote =
+                req.query.showInterestNote === 'true' ||
+                req.query.showInterestNote === '1';
+            const html = await saleService.generateInvoiceHTML(
+                req.params.id,
+                documentType,
+                { showInterestNote }
+            );
             return res.json({
                 success: true,
                 data: html

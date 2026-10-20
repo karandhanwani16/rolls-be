@@ -232,11 +232,12 @@ module.exports = (invoiceData, documentType = 'bill') => {
         return rows + filler;
     };
 
-  //   <div class="bill-note">
-  //   PLEASE NOTE : PAYMENT AFTER ${creditDays} DAYS 1% INTREST WILL BE CHARGED<br/>
-  // </div>
     const creditDays = parseInt(invoiceData.credit_days, 10) || 0;
-    const billNoteHtml = `<div class="owner-signature">CUSTOMER SIGNATURE : ________________</div>`;
+    const showInterestNote = Boolean(invoiceData.showInterestNote);
+    const interestNoteHtml = showInterestNote
+        ? `<div class="bill-note">Please Note : Payment After ${creditDays} Days 1% Interest will Be Charged</div>`
+        : '';
+    const billNoteHtml = `${interestNoteHtml}<div class="owner-signature">CUSTOMER SIGNATURE : ________________</div>`;
 
     const footerRows = isChallan
         ? `
