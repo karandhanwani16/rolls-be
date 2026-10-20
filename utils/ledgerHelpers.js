@@ -32,7 +32,13 @@ function balanceToDebitCredit(balance, positiveSide = 'debit') {
 }
 
 function rowNet(row) {
-    return (row.debit || 0) - (row.credit || 0) - (row.discount || 0);
+    // Customer: salesReturn reduces receivable (like credit).
+    // Supplier: purchaseReturn reduces payable (like debit).
+    return (row.debit || 0)
+        - (row.credit || 0)
+        - (row.discount || 0)
+        - (row.salesReturn || 0)
+        + (row.purchaseReturn || 0);
 }
 
 function computeNetFromRows(rows) {
@@ -130,6 +136,8 @@ function buildLedgerWithOpeningBalance({
     const totalDebit = movementRows.reduce((sum, row) => sum + row.debit, 0);
     const totalCredit = movementRows.reduce((sum, row) => sum + row.credit, 0);
     const totalDiscount = movementRows.reduce((sum, row) => sum + (row.discount || 0), 0);
+    const totalSalesReturn = movementRows.reduce((sum, row) => sum + (row.salesReturn || 0), 0);
+    const totalPurchaseReturn = movementRows.reduce((sum, row) => sum + (row.purchaseReturn || 0), 0);
 
     return {
         rows: withBalance,
@@ -139,6 +147,8 @@ function buildLedgerWithOpeningBalance({
             totalDebit,
             totalCredit,
             totalDiscount,
+            totalSalesReturn,
+            totalPurchaseReturn,
         },
     };
 }
@@ -147,6 +157,7 @@ module.exports = {
     parseDateStart,
     parseDateEnd,
     dayBeforeDateStr,
+    toDateStr,
     balanceToDebitCredit,
     rowNet,
     computeNetFromRows,

@@ -28,6 +28,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const productRoutes = require('./routes/productRoutes');
 const transactionRoutes = require('./routes/transactionsRoutes');
 const stockReportRoutes = require('./routes/stockReportRoutes');
+const pendingBillsReportRoutes = require('./routes/pendingBillsReportRoutes');
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -82,6 +83,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/stock-report', stockReportRoutes);
+app.use('/api/pending-bills', pendingBillsReportRoutes);
 
 const prisma = require('./prisma/client');
 const { ensureDefaultOwner } = require('./prisma/seed');

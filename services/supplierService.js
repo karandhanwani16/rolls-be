@@ -3,7 +3,9 @@ const {
     parseDateStart,
     parseDateEnd,
     dayBeforeDateStr,
+    toDateStr,
     buildLedgerWithOpeningBalance,
+    rowNet,
 } = require('../utils/ledgerHelpers');
 
 class SupplierService {
@@ -56,26 +58,43 @@ class SupplierService {
             voucherNo: purchase.purchase_no,
             debit: 0,
             credit: purchase.total,
+            discount: 0,
+            purchaseReturn: 0,
         };
     }
 
     formatSupplierPayment(payment) {
+        // PaymentOut has no discount field; column kept for customer-report parity
         return {
             date: payment.payment_date,
             particulars: `Payment to ${payment.supplier?.name || 'Unknown'}`,
             voucherNo: '-',
             debit: payment.amount,
             credit: 0,
+            discount: 0,
+            purchaseReturn: 0,
         };
     }
 
     formatSupplierReturn(purchaseReturn) {
+        const billDate = purchaseReturn.purchase?.date
+            ? toDateStr(new Date(purchaseReturn.purchase.date))
+            : null;
+        const billNo = purchaseReturn.purchase?.purchase_no;
+        let particulars = `Purchase return to ${purchaseReturn.supplier_name}`;
+        if (billDate) {
+            particulars += billNo
+                ? ` (against bill ${billNo} dated ${billDate})`
+                : ` (against bill dated ${billDate})`;
+        }
         return {
             date: purchaseReturn.date,
-            particulars: `Purchase return to ${purchaseReturn.supplier_name}`,
+            particulars,
             voucherNo: purchaseReturn.return_no,
-            debit: purchaseReturn.total,
+            debit: 0,
             credit: 0,
+            discount: 0,
+            purchaseReturn: purchaseReturn.total,
         };
     }
 
@@ -107,6 +126,7 @@ class SupplierService {
                     supplier_id: { in: supplierIds },
                     date: dateFilter,
                 },
+                include: { purchase: true },
                 orderBy: { date: 'asc' },
             }),
         ]);
@@ -136,6 +156,8 @@ class SupplierService {
                         closingBalance: 0,
                         totalDebit: 0,
                         totalCredit: 0,
+                        totalDiscount: 0,
+                        totalPurchaseReturn: 0,
                     },
                 };
             }
@@ -146,6 +168,8 @@ class SupplierService {
                 closingBalance: 0,
                 totalDebit: 0,
                 totalCredit: 0,
+                totalDiscount: 0,
+                totalPurchaseReturn: 0,
             };
 
             for (const supplier of suppliers) {
@@ -183,12 +207,16 @@ class SupplierService {
                 summaryTotals.closingBalance += ledger.summary.closingBalance;
                 summaryTotals.totalDebit += ledger.summary.totalDebit;
                 summaryTotals.totalCredit += ledger.summary.totalCredit;
+                summaryTotals.totalDiscount += ledger.summary.totalDiscount || 0;
+                summaryTotals.totalPurchaseReturn += ledger.summary.totalPurchaseReturn || 0;
             }
 
             const sortedRows = allRows.sort((a, b) => new Date(a.date) - new Date(b.date));
             let running = 0;
             const transactions = sortedRows.map((row, index) => {
-                running += row.debit - row.credit;
+                const discount = row.discount || 0;
+                const purchaseReturn = row.purchaseReturn || 0;
+                running += rowNet(row);
                 return {
                     srno: index + 1,
                     date: row.date,
@@ -196,6 +224,8 @@ class SupplierService {
                     voucherNo: row.voucherNo,
                     debit: row.debit,
                     credit: row.credit,
+                    discount,
+                    purchaseReturn,
                     balance: running,
                     isOpeningBalance: row.isOpeningBalance || false,
                     isBroughtForward: row.isBroughtForward || false,

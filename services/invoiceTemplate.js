@@ -320,14 +320,14 @@ module.exports = (invoiceData, documentType = 'bill') => {
       </table>
       ${
           isChallan
-              ? `<div class="challan-note" style="padding-bottom: 0px;border-bottom: none;">
+              ? `<div class="challan-note challan-note-hi">
         कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
         रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
       </div>
-      <div class="challan-note challan-note-en" style="padding-top: 2px;">
+      <div class="challan-note challan-note-en">
         <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
         <div class="challan-signature-row">
-          <span style="display: flex; gap: 32px;"><span>Maker Signature</span> <span>________________________</span></span>
+          <span style="display: flex; gap: 48px;"><span>Maker Signature</span> <span>________________________</span></span>
         </div>
       </div>`
               : ''
@@ -460,7 +460,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       margin-top: 0;
       border: 1px solid #000;
       border-top: none;
-      padding: 8px 10px;
+      padding: 14px 12px;
       font-size: 14px;
       font-weight: 700;
       line-height: 1.45;
@@ -468,7 +468,14 @@ module.exports = (invoiceData, documentType = 'bill') => {
       align-items: center;
       justify-content: space-between;
     }
+    .challan-note-hi {
+      padding-bottom: 8px;
+      border-bottom: none;
+    }
     .challan-note-en {
+      padding-top: 8px;
+      padding-bottom: 16px;
+      min-height: 44px;
       text-align: center;
     }
     .challan-claim {

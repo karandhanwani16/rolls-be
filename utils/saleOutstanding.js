@@ -19,13 +19,46 @@ function isCustomerLedgerPayment(payment) {
     return true;
 }
 
+function emptyAllocation(total) {
+    return {
+        remaining_amount: round2(total),
+        cleared_amount: 0,
+        payment_status: 'UNPAID',
+        applications: [],
+    };
+}
+
+function pushApplication(current, application) {
+    if (!application || !(application.amount > 0)) return;
+    current.applications.push({
+        ...application,
+        amount: round2(application.amount),
+    });
+}
+
+function applyCreditToBill(current, credit, amount) {
+    const applied = round2(Math.min(current.remaining_amount, amount));
+    if (applied <= 0) return 0;
+    current.remaining_amount = round2(current.remaining_amount - applied);
+    pushApplication(current, {
+        type: credit.type,
+        id: credit.id || null,
+        reference: credit.reference || null,
+        description: credit.description || null,
+        date: credit.date || null,
+        amount: applied,
+        source: credit.source || 'SETTLEMENT',
+    });
+    return applied;
+}
+
 /**
  * FIFO-allocate customer payments-in and unlinked sale returns against each
  * customer's sales. Opening balance is settled first so sale outstanding is not
  * understated. Linked returns reduce that sale before allocation. Payments with
  * sale_id are applied to that bill first; any leftover joins the FIFO pool.
  *
- * Returns Map<saleId, { remaining_amount, cleared_amount, payment_status }>
+ * Returns Map<saleId, { remaining_amount, cleared_amount, payment_status, applications }>
  */
 function allocateSaleOutstanding({ sales, payments, saleReturns, customers }) {
     const remainingById = new Map();
@@ -39,11 +72,7 @@ function allocateSaleOutstanding({ sales, payments, saleReturns, customers }) {
             salesByCustomer.set(sale.customer_id, []);
         }
         salesByCustomer.get(sale.customer_id).push(sale);
-        remainingById.set(sale.id, {
-            remaining_amount: round2(sale.total),
-            cleared_amount: 0,
-            payment_status: 'UNPAID',
-        });
+        remainingById.set(sale.id, emptyAllocation(sale.total));
     }
 
     for (const payment of payments || []) {
@@ -78,23 +107,32 @@ function allocateSaleOutstanding({ sales, payments, saleReturns, customers }) {
             const amount = round2(saleReturn.total);
             if (!amount) continue;
 
+            const creditMeta = {
+                type: 'RETURN',
+                id: saleReturn.id,
+                reference: saleReturn.return_no || null,
+                description: saleReturn.description || 'Sales return',
+                date: saleReturn.date,
+                created_at: saleReturn.created_at,
+                source: 'LINKED_RETURN',
+            };
+
             if (saleReturn.sale_id && remainingById.has(saleReturn.sale_id)) {
                 const current = remainingById.get(saleReturn.sale_id);
-                const applied = Math.min(current.remaining_amount, amount);
-                current.remaining_amount = round2(current.remaining_amount - applied);
+                const applied = applyCreditToBill(current, creditMeta, amount);
                 const leftover = round2(amount - applied);
                 if (leftover > 0) {
                     linkedReturnLeftover.push({
+                        ...creditMeta,
                         amount: leftover,
-                        date: saleReturn.date,
-                        created_at: saleReturn.created_at,
+                        source: 'RETURN_OVERFLOW',
                     });
                 }
             } else {
                 linkedReturnLeftover.push({
+                    ...creditMeta,
                     amount,
-                    date: saleReturn.date,
-                    created_at: saleReturn.created_at,
+                    source: 'UNLINKED_RETURN',
                 });
             }
         }
@@ -104,44 +142,60 @@ function allocateSaleOutstanding({ sales, payments, saleReturns, customers }) {
             const amount = round2(customerCreditAmount(payment));
             if (!amount) continue;
 
+            const creditMeta = {
+                type: 'PAYMENT',
+                id: payment.id,
+                reference: payment.type || null,
+                description: payment.description || null,
+                date: payment.payment_date || payment.created_at,
+                created_at: payment.created_at,
+                source: 'BILL_PAYMENT',
+            };
+
             if (payment.sale_id && remainingById.has(payment.sale_id)) {
                 const current = remainingById.get(payment.sale_id);
-                const applied = Math.min(current.remaining_amount, amount);
-                current.remaining_amount = round2(current.remaining_amount - applied);
+                const applied = applyCreditToBill(current, creditMeta, amount);
                 const leftover = round2(amount - applied);
                 if (leftover > 0) {
                     fifoCredits.push({
+                        ...creditMeta,
                         amount: leftover,
-                        date: payment.payment_date || payment.created_at,
-                        created_at: payment.created_at,
+                        source: 'PAYMENT_OVERFLOW',
                     });
                 }
             } else {
                 fifoCredits.push({
+                    ...creditMeta,
                     amount,
-                    date: payment.payment_date || payment.created_at,
-                    created_at: payment.created_at,
+                    source: 'SETTLEMENT',
                 });
             }
         }
 
         const credits = [...fifoCredits, ...linkedReturnLeftover]
             .filter((credit) => credit.amount > 0)
-            .sort((a, b) => eventTime(a.date, a.created_at) - eventTime(b.date, b.created_at));
+            .sort((a, b) => eventTime(a.date, a.created_at) - eventTime(b.date, b.created_at))
+            .map((credit) => ({ ...credit }));
 
-        let creditPool = credits.reduce((sum, credit) => round2(sum + credit.amount), 0);
-        const customer = customerById.get(customerId);
-        const openingBalance = round2(customer?.opening_balance);
-        if (openingBalance > 0) {
-            creditPool = round2(Math.max(0, creditPool - openingBalance));
+        let openingBalance = round2(customerById.get(customerId)?.opening_balance);
+        while (openingBalance > 0 && credits.length > 0) {
+            const credit = credits[0];
+            const used = round2(Math.min(openingBalance, credit.amount));
+            credit.amount = round2(credit.amount - used);
+            openingBalance = round2(openingBalance - used);
+            if (credit.amount <= 0) credits.shift();
         }
 
         for (const sale of customerSales) {
             const current = remainingById.get(sale.id);
-            if (!current || current.remaining_amount <= 0 || creditPool <= 0) continue;
-            const applied = Math.min(current.remaining_amount, creditPool);
-            current.remaining_amount = round2(current.remaining_amount - applied);
-            creditPool = round2(creditPool - applied);
+            if (!current || current.remaining_amount <= 0) continue;
+
+            while (current.remaining_amount > 0 && credits.length > 0) {
+                const credit = credits[0];
+                const applied = applyCreditToBill(current, credit, credit.amount);
+                credit.amount = round2(credit.amount - applied);
+                if (credit.amount <= 0) credits.shift();
+            }
         }
 
         for (const sale of customerSales) {
