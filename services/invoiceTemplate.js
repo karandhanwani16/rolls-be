@@ -321,15 +321,14 @@ module.exports = (invoiceData, documentType = 'bill') => {
       </table>
       ${
           isChallan
-              ? `<div class="challan-footer">
-        <div class="challan-terms">
-          कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
-          रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।<br/>
-          No Claim will be recognised after Cutting the Roll
-        </div>
-        <div class="challan-signature">
-          <span class="challan-signature-label">Maker Signature</span>
-          <span class="challan-signature-line" aria-hidden="true"></span>
+              ? `<div class="challan-note challan-note-hi">
+        कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
+        रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
+      </div>
+      <div class="challan-note challan-note-en">
+        <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
+        <div class="challan-signature-row">
+          <span style="display: flex; gap: 48px;"><span>Maker Signature</span> <span>________________________</span></span>
         </div>
       </div>`
               : ''
@@ -458,43 +457,36 @@ module.exports = (invoiceData, documentType = 'bill') => {
       page-break-inside: avoid;
       break-inside: avoid;
     }
-    .challan-footer {
+    .challan-note {
       margin-top: 0;
       border: 1px solid #000;
       border-top: none;
-      padding: 18px 12px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 24px;
-      font-size: 12px;
-      font-weight: normal;
+      padding: 14px 12px;
+      font-size: 14px;
+      font-weight: 700;
       line-height: 1.45;
-    }
-    .challan-terms {
-      flex: 1;
-      min-width: 0;
-      text-align: left;
-      font-weight: normal;
-    }
-    .challan-signature {
-      flex: 0 0 auto;
       display: flex;
-      align-items: baseline;
-      white-space: nowrap;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .challan-note-hi {
+      padding-bottom: 8px;
+      border-bottom: none;
+    }
+    .challan-note-en {
+      padding-top: 8px;
+      padding-bottom: 16px;
+      min-height: 44px;
+      text-align: center;
+    }
+    .challan-claim {
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .challan-signature-row {
+      text-align: left;
       font-size: 13px;
-      font-weight: normal;
-    }
-    .challan-signature-label {
-      font-weight: normal;
-    }
-    .challan-signature-line {
-      display: inline-block;
-      width: 68mm;
-      margin-left: 8px;
-      border-bottom: 1px solid #000;
-      height: 0.85em;
-      vertical-align: baseline;
+      font-weight: 700;
     }
     th, td {
       padding: 4px 8px;
@@ -539,9 +531,9 @@ module.exports = (invoiceData, documentType = 'bill') => {
       font-size: 18px;
     }
     .bill-note-cell {
-      vertical-align: bottom;
+      vertical-align: top;
       text-align: left;
-      padding: 0 10px 8px;
+      padding: 8px 10px;
     }
     .bill-note {
       font-size: 16px;

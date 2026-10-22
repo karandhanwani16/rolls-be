@@ -107,10 +107,19 @@ class SupplierBillToBillPaymentService {
                 paymentsOut.reduce((total, payment) => total + (Number(payment.amount) || 0), 0) +
                 billOverflowAmount;
 
+            // Pending = outstanding on open bills (supplier still owed).
+            // Available = unsettled/unallocated payment pool (not yet settled via bill-to-bill).
+            const pendingAmount = purchasesWithStatus.reduce(
+                (total, purchase) => total + (Number(purchase.remaining_amount) || 0),
+                0
+            );
+
             return {
                 supplier_id: supplierId,
                 bill_overflow_amount: billOverflowAmount,
                 last_clear_date: latestBillPayment?.bill_latest_clear_date || null,
+                pending_amount: pendingAmount,
+                available_amount: totalPaymentAmount,
                 total_payment_amount: totalPaymentAmount,
                 payments_out: paymentsOut,
                 purchases: purchasesWithStatus,
