@@ -236,7 +236,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const showInterestNote = Boolean(invoiceData.showInterestNote);
     const interestNoteHtml = showInterestNote
         ? `<div class="bill-note">Please Note : Payment After ${creditDays} Days 1% Interest will Be Charged</div>`
-        : '<div class="bill-note"></div>';
+        : '<div class="bill-note" style="height: 57px;"></div>';
     const billNoteHtml = `${interestNoteHtml}<div class="owner-signature">CUSTOMER SIGNATURE : ________________</div>`;
 
     const footerRows = isChallan
@@ -321,12 +321,12 @@ module.exports = (invoiceData, documentType = 'bill') => {
       </table>
       ${
           isChallan
-              ? `<div class="challan-note challan-note-hi">
-        कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
-        रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।
-      </div>
-      <div class="challan-note challan-note-en">
-        <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
+              ? `<div class="challan-note">
+        <div class="challan-terms">
+          कृपया हर एक रोल काटने से पहले कपड़ा अच्छी तरह से परख लें<br/>
+          रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।<br/>
+          No Claim will be recognised after Cutting the Roll
+        </div>
         <div class="challan-signature-row">
           <span style="display: flex;"><span>Maker Signature</span> <span>_____________________________________</span></span>
         </div>
@@ -461,37 +461,28 @@ module.exports = (invoiceData, documentType = 'bill') => {
       margin-top: 0;
       border: 1px solid #000;
       border-top: none;
-      padding: 14px 12px;
+      padding: 0;
       font-size: 14px;
       font-weight: 700;
       line-height: 1.45;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
+      align-items: stretch;
+      min-height: 72px;
     }
-    .challan-note-hi {
-      padding-bottom: 8px;
-      border-bottom: none;
-    }
-    .challan-note-en {
-      padding-top: 8px;
-      padding-bottom: 16px;
-      min-height: 44px;
-      text-align: center;
-    }
-    .challan-claim {
-      font-size: 14px;
-      font-weight: 700;
+    .challan-terms {
+      flex: 1;
+      padding: 14px 12px;
+      text-align: left;
     }
     .challan-signature-row {
+      flex: 0 0 auto;
+      border-left: 1px solid #000;
+      padding: 14px 12px;
+      display: flex;
+      align-items: center;
       text-align: left;
       font-size: 13px;
       font-weight: 700;
-      border-left: 1px solid #000;
-      padding-left: 12px;
-      align-self: stretch;
-      display: flex;
-      align-items: center;
     }
     th, td {
       padding: 4px 8px;
