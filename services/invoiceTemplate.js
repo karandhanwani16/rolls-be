@@ -236,7 +236,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const showInterestNote = Boolean(invoiceData.showInterestNote);
     const interestNoteHtml = showInterestNote
         ? `<div class="bill-note">Please Note : Payment After ${creditDays} Days 1% Interest will Be Charged</div>`
-        : '';
+        : '<div class="bill-note"></div>';
     const billNoteHtml = `${interestNoteHtml}<div class="owner-signature">CUSTOMER SIGNATURE : ________________</div>`;
 
     const footerRows = isChallan
@@ -328,7 +328,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
       <div class="challan-note challan-note-en">
         <div class="challan-claim">No Claim will be recognised after Cutting the Roll</div>
         <div class="challan-signature-row">
-          <span style="display: flex; gap: 48px;"><span>Maker Signature</span> <span>________________________</span></span>
+          <span style="display: flex;"><span>Maker Signature</span> <span>_____________________________________</span></span>
         </div>
       </div>`
               : ''
@@ -487,6 +487,11 @@ module.exports = (invoiceData, documentType = 'bill') => {
       text-align: left;
       font-size: 13px;
       font-weight: 700;
+      border-left: 1px solid #000;
+      padding-left: 12px;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
     }
     th, td {
       padding: 4px 8px;
