@@ -327,8 +327,8 @@ module.exports = (invoiceData, documentType = 'bill') => {
           रोल काटने के बाद हमारी किसी भी प्रकार की जिम्मेदारी नहीं है।<br/>
           No Claim will be recognised after Cutting the Roll
         </div>
-        <div class="challan-signature-row">
-          <span style="display: flex;"><span>Maker Signature</span> <span>_____________________________________</span></span>
+        <div class="challan-signature-row" style="width: 54%;">
+          <span style="display: flex;"><span>Maker Signature</span> <span>________________________________________</span></span>
         </div>
       </div>`
               : ''
