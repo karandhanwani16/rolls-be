@@ -235,7 +235,7 @@ module.exports = (invoiceData, documentType = 'bill') => {
     const creditDays = parseInt(invoiceData.credit_days, 10) || 0;
     const showInterestNote = Boolean(invoiceData.showInterestNote);
     const interestNoteHtml = showInterestNote
-        ? `<div class="bill-note">Please Note : Payment After ${creditDays} Days 1% Interest will Be Charged</div>`
+        ? `<div class="bill-note" style="height: 57px;">Please Note : Payment After ${creditDays} Days 1% Interest will Be Charged</div>`
         : '<div class="bill-note" style="height: 57px;"></div>';
     const billNoteHtml = `${interestNoteHtml}<div class="owner-signature">CUSTOMER SIGNATURE : ________________</div>`;
 
@@ -479,10 +479,11 @@ module.exports = (invoiceData, documentType = 'bill') => {
       border-left: 1px solid #000;
       padding: 14px 12px;
       display: flex;
-      align-items: center;
+      align-items: flex-end;
       text-align: left;
       font-size: 13px;
       font-weight: 700;
+      padding-bottom: 8px;
     }
     th, td {
       padding: 4px 8px;
